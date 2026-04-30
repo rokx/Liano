@@ -26,20 +26,14 @@ class NoteBandView @JvmOverloads constructor(
 
     private val songNotes = listOf(
         SongNote("C4", 0f, 1f, 0),
-        SongNote("D4", 1.2f, 1f, 1),
-        SongNote("E4", 2.4f, 1f, 2),
-        SongNote("C4", 3.6f, 1.2f, 0),
-        SongNote("E4", 5.1f, 1f, 2),
-        SongNote("F4", 6.3f, 1f, 3),
-        SongNote("G4", 7.5f, 1.6f, 4),
-        SongNote("G4", 9.5f, 1f, 4),
-        SongNote("F4", 10.7f, 1f, 3),
-        SongNote("E4", 11.9f, 1f, 2),
-        SongNote("D4", 13.1f, 1f, 1),
-        SongNote("C4", 14.3f, 1.6f, 0)
+        SongNote("D4", 1.4f, 1f, 1),
+        SongNote("C4", 2.8f, 1f, 0),
+        SongNote("D4", 4.2f, 1f, 1),
+        SongNote("C4", 5.6f, 1f, 0),
+        SongNote("D4", 7.0f, 1f, 1)
     )
 
-    private val lanes = listOf("C4", "D4", "E4", "F4", "G4")
+    private val lanes = listOf("C4", "D4")
     private val lanePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(238, 242, 247)
         style = Paint.Style.FILL
@@ -71,8 +65,8 @@ class NoteBandView @JvmOverloads constructor(
 
     private var scrollBeat = 0f
     private var currentNoteName: String? = null
-    private val animator = ValueAnimator.ofFloat(0f, 16f).apply {
-        duration = 24000L
+    private val animator = ValueAnimator.ofFloat(0f, 8.5f).apply {
+        duration = 14000L
         repeatCount = ValueAnimator.INFINITE
         interpolator = LinearInterpolator()
         addUpdateListener {
@@ -115,7 +109,7 @@ class NoteBandView @JvmOverloads constructor(
                 18f,
                 lanePaint
             )
-            canvas.drawText(laneName, paddingLeft + 36f, top + laneHeight * 0.62f, smallTextPaint)
+            canvas.drawText(laneName, paddingLeft + 36f, top + laneHeight * 0.58f, smallTextPaint)
         }
 
         canvas.drawLine(targetX, paddingTop.toFloat(), targetX, (height - paddingBottom).toFloat(), targetPaint)
@@ -125,8 +119,8 @@ class NoteBandView @JvmOverloads constructor(
             val right = left + note.lengthBeats * beatWidth
             if (right < paddingLeft || left > width - paddingRight) return@forEach
 
-            val top = paddingTop + note.lane * laneHeight + 10f
-            val bottom = top + laneHeight - 28f
+            val top = paddingTop + note.lane * laneHeight + 16f
+            val bottom = top + laneHeight - 40f
             val isInTarget = targetX in left..right
             val isMatched = isInTarget && currentNoteName == note.name
             val paint = if (isMatched) matchedNotePaint else notePaint
