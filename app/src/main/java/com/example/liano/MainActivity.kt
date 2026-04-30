@@ -26,13 +26,14 @@ class MainActivity : AppCompatActivity() {
     private var dispatcher: AudioDispatcher? = null
 
     private lateinit var pitchText: TextView
-
+    private lateinit var noteBand: NoteBandView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         pitchText = findViewById(R.id.pitchText)
+        noteBand = findViewById(R.id.noteBand)
 
         requestMicPermission()
     }
@@ -78,8 +79,8 @@ class MainActivity : AppCompatActivity() {
                 if (pitchInHz > 0) {
                     Log.d("Pitch", "Detected pitch: $pitchInHz Hz")
                     val noteName = frequencyToNoteName(pitchInHz)
-                    pitchText.text = "$noteName ($pitchInHz Hz)"
-
+                    pitchText.text = "$noteName (${pitchInHz.toInt()} Hz)"
+                    noteBand.setDetectedNote(noteName)
                 }
             }
         }
