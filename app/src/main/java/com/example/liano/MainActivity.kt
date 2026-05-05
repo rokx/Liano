@@ -3,6 +3,7 @@ package com.example.liano
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -23,16 +24,20 @@ class MainActivity : AppCompatActivity() {
 
     private val RECORD_AUDIO_PERMISSION = Manifest.permission.RECORD_AUDIO
     private val REQUEST_MIC = 100
+    private val exercise = SimpleNoteExercise()
     private var dispatcher: AudioDispatcher? = null
 
     private lateinit var pitchText: TextView
-
+    private lateinit var greatWorkText: TextView
+    private lateinit var noteBand: NoteBandView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         pitchText = findViewById(R.id.pitchText)
+        greatWorkText = findViewById(R.id.greatWorkText)
+        noteBand = findViewById(R.id.noteBand)
 
         requestMicPermission()
     }
@@ -78,8 +83,11 @@ class MainActivity : AppCompatActivity() {
                 if (pitchInHz > 0) {
                     Log.d("Pitch", "Detected pitch: $pitchInHz Hz")
                     val noteName = frequencyToNoteName(pitchInHz)
-                    pitchText.text = "$noteName ($pitchInHz Hz)"
-
+                    pitchText.text = "$noteName (${pitchInHz.toInt()} Hz)"
+                    noteBand.setDetectedNote(noteName)
+                    if (exercise.onNoteDetected(noteName, SystemClock.elapsedRealtime())) {
+                        showGreatWork()
+                    }
                 }
             }
         }
@@ -89,6 +97,22 @@ class MainActivity : AppCompatActivity() {
         Thread {
             dispatcher?.run()
         }.start()
+    }
+
+    private fun showGreatWork() {
+        greatWorkText.animate().cancel()
+        greatWorkText.alpha = 0f
+        greatWorkText.animate()
+            .alpha(1f)
+            .setDuration(500L)
+            .withEndAction {
+                greatWorkText.animate()
+                    .alpha(0f)
+                    .setStartDelay(900L)
+                    .setDuration(700L)
+                    .start()
+            }
+            .start()
     }
 
     private fun frequencyToNoteName(freq: Float): String {
