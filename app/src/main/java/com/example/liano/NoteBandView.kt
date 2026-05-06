@@ -31,6 +31,11 @@ class NoteBandView @JvmOverloads constructor(
 
     private var lanes = listOf("C4", "D4")
 
+    private data class InputMark(
+        val noteName: String,
+        val beat: Float
+    )
+
     private val lanePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(238, 242, 247)
         style = Paint.Style.FILL
@@ -44,6 +49,12 @@ class NoteBandView @JvmOverloads constructor(
     private val matchedNotePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(55, 190, 120)
         style = Paint.Style.FILL
+    }
+
+    private val inputMarkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(237, 95, 77)
+        style = Paint.Style.FILL
+        alpha = 210
     }
 
     private val targetPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -67,6 +78,8 @@ class NoteBandView @JvmOverloads constructor(
 
     private var scrollBeat = 0f
     private var currentNoteName: String? = null
+    private var inputMarks = emptyList<InputMark>()
+    private var lastInputMarkBeat = Float.NEGATIVE_INFINITY
 
     private val animator = ValueAnimator.ofFloat(0f, 16f).apply {
         duration = 20000L
@@ -91,12 +104,30 @@ class NoteBandView @JvmOverloads constructor(
     fun setSongNotes(notes: List<SongNote>) {
         songNotes = notes
         lanes = notes.map { it.name }.distinct()
+        inputMarks = emptyList()
+        lastInputMarkBeat = Float.NEGATIVE_INFINITY
+        currentNoteName = null
         invalidate()
     }
 
     fun setDetectedNote(noteName: String) {
         currentNoteName = noteName
+        addInputMark(noteName)
         invalidate()
+    }
+
+    fun clearDetectedNote() {
+        currentNoteName = null
+        invalidate()
+    }
+
+    private fun addInputMark(noteName: String) {
+        if (noteName !in lanes) return
+        if (scrollBeat - lastInputMarkBeat < MIN_INPUT_MARK_BEAT_SPACING) return
+
+        inputMarks = (inputMarks + InputMark(noteName, scrollBeat))
+            .takeLast(MAX_INPUT_MARKS)
+        lastInputMarkBeat = scrollBeat
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -126,6 +157,17 @@ class NoteBandView @JvmOverloads constructor(
 
         canvas.drawLine(targetX, paddingTop.toFloat(), targetX, (height - paddingBottom).toFloat(), targetPaint)
 
+        inputMarks.forEach { mark ->
+            val laneIndex = lanes.indexOf(mark.noteName)
+            if (laneIndex < 0) return@forEach
+
+            val x = targetX + (mark.beat - scrollBeat) * beatWidth
+            if (x < paddingLeft || x > width - paddingRight) return@forEach
+
+            val centerY = paddingTop + laneIndex * laneHeight + laneHeight * 0.5f
+            canvas.drawCircle(x, centerY, 12f, inputMarkPaint)
+        }
+
         songNotes.forEach { note ->
             val left = targetX + (note.startBeat - scrollBeat) * beatWidth
             val right = left + note.lengthBeats * beatWidth
@@ -143,5 +185,10 @@ class NoteBandView @JvmOverloads constructor(
             canvas.drawRoundRect(RectF(left, top, right, bottom), 24f, 24f, paint)
             canvas.drawText(note.name, (left + right) / 2f, top + (bottom - top) * 0.62f, textPaint)
         }
+    }
+
+    companion object {
+        private const val MAX_INPUT_MARKS = 260
+        private const val MIN_INPUT_MARK_BEAT_SPACING = 0.06f
     }
 }

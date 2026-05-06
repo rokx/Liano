@@ -157,11 +157,14 @@ class MainActivity : AppCompatActivity() {
             PitchProcessor.PitchEstimationAlgorithm.YIN,
             22050f,
             1024
-        ) { pitchDetectionResult, _ ->
+        ) { pitchDetectionResult, audioEvent ->
             val pitchInHz = pitchDetectionResult.pitch
+            val isVoiceLevel = audioEvent.rms >= MIN_VOICE_RMS
+            val isConfidentPitch = pitchDetectionResult.isPitched &&
+                pitchDetectionResult.probability >= MIN_PITCH_PROBABILITY
 
             runOnUiThread {
-                if (pitchInHz > 0) {
+                if (pitchInHz > 0 && isVoiceLevel && isConfidentPitch) {
                     Log.d("Pitch", "Detected pitch: $pitchInHz Hz")
 
                     val noteName = frequencyToNoteName(pitchInHz)
@@ -173,6 +176,9 @@ class MainActivity : AppCompatActivity() {
                     ) {
                         showGreatWork()
                     }
+                } else {
+                    pitchText.text = "Waiting for voice..."
+                    noteBand.clearDetectedNote()
                 }
             }
         }
@@ -212,5 +218,10 @@ class MainActivity : AppCompatActivity() {
         val octave = noteNumber / 12 - 1
 
         return "$name$octave"
+    }
+
+    companion object {
+        private const val MIN_VOICE_RMS = 0.015
+        private const val MIN_PITCH_PROBABILITY = 0.75f
     }
 }
