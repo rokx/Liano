@@ -1,5 +1,7 @@
 package com.example.liano
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
@@ -10,6 +12,7 @@ import android.util.AttributeSet
 import android.view.View
 import android.view.animation.LinearInterpolator
 import kotlin.math.max
+import kotlin.math.roundToLong
 
 class NoteBandView @JvmOverloads constructor(
     context: Context,
@@ -80,20 +83,39 @@ class NoteBandView @JvmOverloads constructor(
     private var currentNoteName: String? = null
     private var inputMarks = emptyList<InputMark>()
     private var lastInputMarkBeat = Float.NEGATIVE_INFINITY
+    private var songEndBeat = songNotes.maxOf { it.startBeat + it.lengthBeats }
+    private var playbackWasCancelled = false
+    var onPlaybackFinished: (() -> Unit)? = null
 
-    private val animator = ValueAnimator.ofFloat(0f, 16f).apply {
-        duration = 20000L
-        repeatCount = ValueAnimator.INFINITE
+    private val animator = ValueAnimator().apply {
+        repeatCount = 0
         interpolator = LinearInterpolator()
         addUpdateListener {
             scrollBeat = it.animatedValue as Float
             invalidate()
         }
+        addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationStart(animation: Animator) {
+                playbackWasCancelled = false
+            }
+
+            override fun onAnimationCancel(animation: Animator) {
+                playbackWasCancelled = true
+            }
+
+            override fun onAnimationEnd(animation: Animator) {
+                if (!playbackWasCancelled && scrollBeat >= songEndBeat) {
+                    scrollBeat = songEndBeat
+                    invalidate()
+                    onPlaybackFinished?.invoke()
+                }
+            }
+        })
     }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
-        if (!animator.isStarted) animator.start()
+        configurePlaybackAnimator()
     }
 
     override fun onDetachedFromWindow() {
@@ -107,8 +129,29 @@ class NoteBandView @JvmOverloads constructor(
         inputMarks = emptyList()
         lastInputMarkBeat = Float.NEGATIVE_INFINITY
         currentNoteName = null
+        songEndBeat = notes.maxOfOrNull { it.startBeat + it.lengthBeats } ?: 1f
+        scrollBeat = 0f
+        configurePlaybackAnimator()
+        animator.start()
         invalidate()
     }
+
+    fun pausePlayback() {
+        if (animator.isRunning && !animator.isPaused) {
+            animator.pause()
+        }
+    }
+
+    fun resumePlayback() {
+        when {
+            animator.isPaused -> animator.resume()
+            !animator.isStarted && scrollBeat < songEndBeat -> animator.start()
+        }
+    }
+
+    fun isPlaybackPaused(): Boolean = animator.isPaused
+
+    fun hasPlaybackFinished(): Boolean = scrollBeat >= songEndBeat && !animator.isRunning
 
     fun setDetectedNote(noteName: String) {
         currentNoteName = noteName
@@ -139,7 +182,7 @@ class NoteBandView @JvmOverloads constructor(
 
         val laneHeight = contentHeight / lanes.size.toFloat()
         val beatWidth = max(90f, contentWidth / 4f)
-        val targetX = paddingLeft + contentWidth * 0.25f
+        val targetX = paddingLeft + contentWidth * 0.36f
 
         lanes.forEachIndexed { index, laneName ->
             val top = paddingTop + index * laneHeight
@@ -190,5 +233,13 @@ class NoteBandView @JvmOverloads constructor(
     companion object {
         private const val MAX_INPUT_MARKS = 260
         private const val MIN_INPUT_MARK_BEAT_SPACING = 0.06f
+        private const val MS_PER_BEAT = 1250L
+    }
+
+    private fun configurePlaybackAnimator() {
+        animator.cancel()
+        animator.setFloatValues(scrollBeat, songEndBeat)
+        animator.duration = max(1L, ((songEndBeat - scrollBeat) * MS_PER_BEAT).roundToLong())
+        animator.repeatCount = 0
     }
 }

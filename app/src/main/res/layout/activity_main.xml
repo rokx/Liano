@@ -1,21 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:padding="16dp">
+    android:layout_height="match_parent">
 
     <LinearLayout
         android:id="@+id/sheetSelectionContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:background="@drawable/bg_main_menu"
         android:gravity="center"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <ImageView
+            android:layout_width="132dp"
+            android:layout_height="132dp"
+            android:layout_marginBottom="24dp"
+            android:contentDescription="@string/app_logo"
+            android:src="@drawable/ic_liano_launcher" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="24dp"
+            android:layout_marginBottom="28dp"
             android:text="Choose a song"
+            android:textColor="@android:color/white"
             android:textSize="30sp"
             android:textStyle="bold" />
 
@@ -33,20 +42,34 @@
         android:layout_height="match_parent"
         android:gravity="center_horizontal"
         android:orientation="vertical"
+        android:padding="16dp"
         android:visibility="gone">
 
-        <Button
-            android:id="@+id/backToMenuButton"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="start"
             android:layout_marginBottom="16dp"
-            android:text="Back" />
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/backToMenuButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Back" />
+
+            <Button
+                android:id="@+id/pausePlaybackButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="Pause" />
+        </LinearLayout>
 
         <com.example.liano.NoteBandView
             android:id="@+id/noteBand"
             android:layout_width="match_parent"
-            android:layout_height="260dp"
+            android:layout_height="240dp"
             android:layout_marginBottom="24dp" />
 
         <TextView

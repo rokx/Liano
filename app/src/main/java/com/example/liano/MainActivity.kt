@@ -42,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sheetSelectionContainer: View
     private lateinit var sheetButtonContainer: LinearLayout
     private lateinit var backToMenuButton: Button
+    private lateinit var pausePlaybackButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,9 +57,17 @@ class MainActivity : AppCompatActivity() {
         sheetSelectionContainer = findViewById(R.id.sheetSelectionContainer)
         sheetButtonContainer = findViewById(R.id.sheetButtonContainer)
         backToMenuButton = findViewById(R.id.backToMenuButton)
+        pausePlaybackButton = findViewById(R.id.pausePlaybackButton)
 
         backToMenuButton.setOnClickListener {
             showSheetSelection()
+        }
+        pausePlaybackButton.setOnClickListener {
+            toggleSheetPlayback()
+        }
+        noteBand.onPlaybackFinished = {
+            pausePlaybackButton.text = "Finished"
+            pausePlaybackButton.isEnabled = false
         }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -77,6 +86,8 @@ class MainActivity : AppCompatActivity() {
     private fun setupSheetButtons() {
         loadSongsFromAssets().forEach { song ->
             val button = Button(this).apply {
+                background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_song_button)
+                setTextColor(ContextCompat.getColor(this@MainActivity, android.R.color.black))
                 text = song.title
                 textSize = 22f
                 setPadding(32, 24, 32, 24)
@@ -132,14 +143,33 @@ class MainActivity : AppCompatActivity() {
         }
 
         noteBand.setSongNotes(visualNotes)
+        pausePlaybackButton.text = "Pause"
+        pausePlaybackButton.isEnabled = true
 
         sheetSelectionContainer.visibility = View.GONE
         playContainer.visibility = View.VISIBLE
     }
 
     private fun showSheetSelection() {
+        noteBand.pausePlayback()
         playContainer.visibility = View.GONE
         sheetSelectionContainer.visibility = View.VISIBLE
+    }
+
+    private fun toggleSheetPlayback() {
+        if (noteBand.hasPlaybackFinished()) {
+            pausePlaybackButton.text = "Finished"
+            pausePlaybackButton.isEnabled = false
+            return
+        }
+
+        if (noteBand.isPlaybackPaused()) {
+            noteBand.resumePlayback()
+            pausePlaybackButton.text = "Pause"
+        } else {
+            noteBand.pausePlayback()
+            pausePlaybackButton.text = "Resume"
+        }
     }
 
     private fun requestMicPermission() {
