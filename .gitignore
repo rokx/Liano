@@ -24,6 +24,10 @@ out/
 .gradle
 .gradle/
 build/
+gradle/gradle-daemon-jvm.properties
+
+# Kotlin generated files
+.kotlin/
 
 # Signing files
 .signing/
