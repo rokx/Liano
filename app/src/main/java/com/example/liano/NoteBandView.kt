@@ -17,46 +17,48 @@ class NoteBandView @JvmOverloads constructor(
     defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
 
-    private data class SongNote(
+    data class SongNote(
         val name: String,
         val startBeat: Float,
         val lengthBeats: Float,
         val lane: Int
     )
 
-    private val songNotes = listOf(
+    private var songNotes = listOf(
         SongNote("C4", 0f, 1f, 0),
-        SongNote("D4", 1.4f, 1f, 1),
-        SongNote("C4", 2.8f, 1f, 0),
-        SongNote("D4", 4.2f, 1f, 1),
-        SongNote("C4", 5.6f, 1f, 0),
-        SongNote("D4", 7.0f, 1f, 1)
+        SongNote("D4", 1.4f, 1f, 1)
     )
 
-    private val lanes = listOf("C4", "D4")
+    private var lanes = listOf("C4", "D4")
+
     private val lanePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(238, 242, 247)
         style = Paint.Style.FILL
     }
+
     private val notePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(88, 166, 255)
         style = Paint.Style.FILL
     }
+
     private val matchedNotePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(55, 190, 120)
         style = Paint.Style.FILL
     }
+
     private val targetPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(255, 193, 7)
         strokeWidth = 6f
         style = Paint.Style.STROKE
     }
+
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(34, 45, 60)
         textAlign = Paint.Align.CENTER
         textSize = 36f
         isFakeBoldText = true
     }
+
     private val smallTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(87, 96, 111)
         textAlign = Paint.Align.CENTER
@@ -65,8 +67,9 @@ class NoteBandView @JvmOverloads constructor(
 
     private var scrollBeat = 0f
     private var currentNoteName: String? = null
-    private val animator = ValueAnimator.ofFloat(0f, 8.5f).apply {
-        duration = 14000L
+
+    private val animator = ValueAnimator.ofFloat(0f, 16f).apply {
+        duration = 20000L
         repeatCount = ValueAnimator.INFINITE
         interpolator = LinearInterpolator()
         addUpdateListener {
@@ -85,6 +88,12 @@ class NoteBandView @JvmOverloads constructor(
         super.onDetachedFromWindow()
     }
 
+    fun setSongNotes(notes: List<SongNote>) {
+        songNotes = notes
+        lanes = notes.map { it.name }.distinct()
+        invalidate()
+    }
+
     fun setDetectedNote(noteName: String) {
         currentNoteName = noteName
         invalidate()
@@ -92,9 +101,10 @@ class NoteBandView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+
         val contentWidth = width - paddingLeft - paddingRight
         val contentHeight = height - paddingTop - paddingBottom
-        if (contentWidth <= 0 || contentHeight <= 0) return
+        if (contentWidth <= 0 || contentHeight <= 0 || lanes.isEmpty()) return
 
         val laneHeight = contentHeight / lanes.size.toFloat()
         val beatWidth = max(90f, contentWidth / 4f)
@@ -103,12 +113,14 @@ class NoteBandView @JvmOverloads constructor(
         lanes.forEachIndexed { index, laneName ->
             val top = paddingTop + index * laneHeight
             val bottom = top + laneHeight - 8f
+
             canvas.drawRoundRect(
                 RectF(paddingLeft.toFloat(), top, (width - paddingRight).toFloat(), bottom),
                 18f,
                 18f,
                 lanePaint
             )
+
             canvas.drawText(laneName, paddingLeft + 36f, top + laneHeight * 0.58f, smallTextPaint)
         }
 
@@ -117,7 +129,10 @@ class NoteBandView @JvmOverloads constructor(
         songNotes.forEach { note ->
             val left = targetX + (note.startBeat - scrollBeat) * beatWidth
             val right = left + note.lengthBeats * beatWidth
-            if (right < paddingLeft || left > width - paddingRight) return@forEach
+
+            if (right < paddingLeft || left > width - paddingRight) {
+                return@forEach
+            }
 
             val top = paddingTop + note.lane * laneHeight + 16f
             val bottom = top + laneHeight - 40f
