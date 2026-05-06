@@ -1,0 +1,65 @@
+name: Android APK Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag, for example v0.0.1"
+        required: true
+        default: "v0.0.1"
+      release_name:
+        description: "Release title"
+        required: false
+        default: ""
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release-apk:
+    name: Build and publish APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Build release APK
+        run: ./gradlew --no-daemon :app:assembleRelease
+
+      - name: Prepare APK artifact
+        run: |
+          mkdir -p release
+          cp app/build/outputs/apk/release/app-release-unsigned.apk release/liano-${{ github.event.inputs.tag_name || github.ref_name }}-unsigned.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: liano-release-apk
+          path: release/*.apk
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          name: ${{ github.event.inputs.release_name || github.event.inputs.tag_name || github.ref_name }}
+          files: release/*.apk
+          draft: false
+          prerelease: false
+          generate_release_notes: true
