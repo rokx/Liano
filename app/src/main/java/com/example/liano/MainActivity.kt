@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import be.tarsos.dsp.AudioDispatcher
 import be.tarsos.dsp.io.android.AudioDispatcherFactory
 import be.tarsos.dsp.pitch.PitchProcessor
+import org.json.JSONObject
 import kotlin.math.log2
 import kotlin.math.roundToInt
 
@@ -23,12 +24,6 @@ class MainActivity : AppCompatActivity() {
     private data class SheetSong(
         val title: String,
         val notes: List<String>
-    )
-
-    private val songs = listOf(
-        SheetSong("First Steps", listOf("C4", "D4", "C4", "D4", "C4", "D4")),
-        SheetSong("Warm Up", listOf("C4", "C4", "D4", "D4", "C4", "D4")),
-        SheetSong("Little Melody", listOf("D4", "C4", "D4", "C4", "D4", "C4"))
     )
 
     private val RECORD_AUDIO_PERMISSION = Manifest.permission.RECORD_AUDIO
@@ -62,7 +57,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupSheetButtons() {
-        songs.forEach { song ->
+        loadSongsFromAssets().forEach { song ->
             val button = Button(this).apply {
                 text = song.title
                 textSize = 22f
@@ -83,17 +78,38 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun loadSongsFromAssets(): List<SheetSong> {
+        val songFiles = assets.list("songs")
+            ?.filter { it.endsWith(".json") }
+            ?.sorted()
+            .orEmpty()
+
+        return songFiles.map { fileName ->
+            assets.open("songs/$fileName").bufferedReader().use { reader ->
+                val json = JSONObject(reader.readText())
+                val notesJson = json.getJSONArray("notes")
+                val notes = List(notesJson.length()) { index -> notesJson.getString(index) }
+
+                SheetSong(
+                    title = json.getString("title"),
+                    notes = notes
+                )
+            }
+        }
+    }
+
     private fun openSong(song: SheetSong) {
         exercise = SimpleNoteExercise(song.notes)
 
         taskText.text = "Play: ${song.notes.joinToString(" ") { it.replace("4", "") }}"
 
+        val lanes = song.notes.distinct()
         val visualNotes = song.notes.mapIndexed { index, note ->
             NoteBandView.SongNote(
                 name = note,
                 startBeat = index * 1.4f,
                 lengthBeats = 1f,
-                lane = if (note.startsWith("C")) 0 else 1
+                lane = lanes.indexOf(note)
             )
         }
 
