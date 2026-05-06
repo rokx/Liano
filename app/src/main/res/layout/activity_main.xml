@@ -31,9 +31,17 @@
         android:id="@+id/playContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:gravity="center"
+        android:gravity="center_horizontal"
         android:orientation="vertical"
         android:visibility="gone">
+
+        <Button
+            android:id="@+id/backToMenuButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="start"
+            android:layout_marginBottom="16dp"
+            android:text="Back" />
 
         <com.example.liano.NoteBandView
             android:id="@+id/noteBand"
