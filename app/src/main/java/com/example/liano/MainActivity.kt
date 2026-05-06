@@ -33,6 +33,8 @@ class MainActivity : AppCompatActivity() {
     private var dispatcher: AudioDispatcher? = null
 
     private lateinit var pitchText: TextView
+    private var pitchLevelView: com.example.liano.ui.PitchLevelView? = null
+
     private lateinit var greatWorkText: TextView
     private lateinit var taskText: TextView
     private lateinit var noteBand: NoteBandView
@@ -45,6 +47,9 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         pitchText = findViewById(R.id.pitchText)
+        pitchLevelView = findViewById(R.id.pitchLevelView)
+        pitchLevelView?.setRange(80f, 300f)
+
         greatWorkText = findViewById(R.id.greatWorkText)
         taskText = findViewById(R.id.taskText)
         noteBand = findViewById(R.id.noteBand)
@@ -210,5 +215,21 @@ class MainActivity : AppCompatActivity() {
         val octave = noteNumber / 12 - 1
 
         return "$name$octave"
+    }
+}
+
+@Composable
+fun Greeting(name: String, modifier: Modifier = Modifier) {
+    Text(
+        text = "Hello $name!",
+        modifier = modifier
+    )
+}
+
+@Preview(showBackground = true)
+@Composable
+fun GreetingPreview() {
+    LianoTheme {
+        Greeting("Android")
     }
 }

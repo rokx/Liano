@@ -1,0 +1,50 @@
+name: Release 0.0.1
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/release-0.0.1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Prepare APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk Liano-0.0.1-debug.apk
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: 0.0.1
+          name: 0.0.1
+          body: APK built from the current main branch.
+          files: Liano-0.0.1-debug.apk
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
