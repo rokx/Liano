@@ -26,6 +26,7 @@ class MainActivity : AppCompatActivity() {
     private var dispatcher: AudioDispatcher? = null
 
     private lateinit var pitchText: TextView
+    private var pitchLevelView: com.example.liano.ui.PitchLevelView? = null
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,6 +34,8 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         pitchText = findViewById(R.id.pitchText)
+        pitchLevelView = findViewById(R.id.pitchLevelView)
+        pitchLevelView?.setRange(80f, 300f)
 
         requestMicPermission()
     }
@@ -79,7 +82,7 @@ class MainActivity : AppCompatActivity() {
                     Log.d("Pitch", "Detected pitch: $pitchInHz Hz")
                     val noteName = frequencyToNoteName(pitchInHz)
                     pitchText.text = "$noteName ($pitchInHz Hz)"
-
+                    pitchLevelView?.setPitch(pitchInHz)
                 }
             }
         }
