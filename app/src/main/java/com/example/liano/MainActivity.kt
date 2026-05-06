@@ -9,6 +9,7 @@ import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -40,6 +41,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var playContainer: View
     private lateinit var sheetSelectionContainer: View
     private lateinit var sheetButtonContainer: LinearLayout
+    private lateinit var backToMenuButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,7 +55,21 @@ class MainActivity : AppCompatActivity() {
         playContainer = findViewById(R.id.playContainer)
         sheetSelectionContainer = findViewById(R.id.sheetSelectionContainer)
         sheetButtonContainer = findViewById(R.id.sheetButtonContainer)
+        backToMenuButton = findViewById(R.id.backToMenuButton)
 
+        backToMenuButton.setOnClickListener {
+            showSheetSelection()
+        }
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (playContainer.visibility == View.VISIBLE) {
+                    showSheetSelection()
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
         setupSheetButtons()
         requestMicPermission()
     }
@@ -121,6 +137,11 @@ class MainActivity : AppCompatActivity() {
         playContainer.visibility = View.VISIBLE
     }
 
+    private fun showSheetSelection() {
+        playContainer.visibility = View.GONE
+        sheetSelectionContainer.visibility = View.VISIBLE
+    }
+
     private fun requestMicPermission() {
         if (ContextCompat.checkSelfPermission(this, RECORD_AUDIO_PERMISSION)
             != PackageManager.PERMISSION_GRANTED
@@ -171,7 +192,8 @@ class MainActivity : AppCompatActivity() {
                     pitchText.text = "$noteName (${pitchInHz.toInt()} Hz)"
                     noteBand.setDetectedNote(noteName)
 
-                    if (::exercise.isInitialized &&
+                    if (playContainer.visibility == View.VISIBLE &&
+                        ::exercise.isInitialized &&
                         exercise.onNoteDetected(noteName, SystemClock.elapsedRealtime())
                     ) {
                         showGreatWork()
