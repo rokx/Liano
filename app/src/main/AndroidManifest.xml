@@ -12,9 +12,8 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Liano">
         <activity
-            android:name=".MainActivity"
+            android:name="com.rokx.liano.MainActivity"
             android:exported="true"
-            android:label="@string/app_name"
             android:screenOrientation="landscape"
             android:theme="@style/Theme.Liano">
             <intent-filter>

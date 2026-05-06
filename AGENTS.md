@@ -19,7 +19,7 @@
 - Indentation: 4 spaces; keep lines readable; prefer explicit types at public APIs.
 - Names: classes `PascalCase`, functions/vars `camelCase`, constants `UPPER_SNAKE_CASE`.
 - Resources: lowercase with underscores (e.g., `activity_main.xml`, `ic_waveform.png`).
-- Packages under `com.example.liano`; avoid cyclic deps and keep files small, focused.
+- Packages under `com.rokx.liano`; avoid cyclic deps and keep files small, focused.
 
 ## Testing Guidelines
 - Frameworks: JUnit for unit tests; AndroidX Test for instrumented tests.
