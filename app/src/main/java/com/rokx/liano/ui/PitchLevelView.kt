@@ -1,4 +1,4 @@
-package com.example.liano.ui
+package com.rokx.liano.ui
 
 import android.content.Context
 import android.graphics.Canvas
@@ -6,7 +6,7 @@ import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.View
 import androidx.core.content.ContextCompat
-import com.example.liano.R
+import com.rokx.liano.R
 import kotlin.math.max
 import kotlin.math.min
 
@@ -73,4 +73,3 @@ class PitchLevelView @JvmOverloads constructor(
         canvas.drawLine(0f, yMid, w, yMid, guidePaint)
     }
 }
-

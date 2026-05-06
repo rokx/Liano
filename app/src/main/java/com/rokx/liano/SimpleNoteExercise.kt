@@ -1,4 +1,4 @@
-package com.example.liano
+package com.rokx.liano
 
 class SimpleNoteExercise(
     private val notesToPlay: List<String> = listOf("C4", "D4", "C4", "D4", "C4", "D4")

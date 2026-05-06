@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.liano"
+    namespace = "com.rokx.liano"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.liano"
+        applicationId = "com.rokx.liano"
         minSdk = 21
         targetSdk = 36
         versionCode = 1

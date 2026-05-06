@@ -1,4 +1,4 @@
-package com.example.liano
+package com.rokx.liano
 
 import android.Manifest
 import android.content.pm.PackageManager

@@ -1,4 +1,4 @@
-package com.example.liano.ui.theme
+package com.rokx.liano.ui.theme
 
 import android.app.Activity
 import android.os.Build
