@@ -7,7 +7,6 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
 import android.view.animation.LinearInterpolator
@@ -32,51 +31,35 @@ class NoteBandView @JvmOverloads constructor(
         SongNote("D4", 1.4f, 1f, 1)
     )
 
-    private var lanes = listOf("C4", "D4")
-
     private data class InputMark(
         val noteName: String,
         val beat: Float
     )
 
-    private val lanePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(238, 242, 247)
-        style = Paint.Style.FILL
+    private val staffPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(70, 70, 70)
+        strokeWidth = 3f
     }
 
     private val notePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(88, 166, 255)
+        color = Color.rgb(30, 30, 30)
         style = Paint.Style.FILL
     }
 
-    private val matchedNotePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(55, 190, 120)
+    private val activeNotePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(49, 120, 255)
         style = Paint.Style.FILL
     }
 
-    private val inputMarkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(237, 95, 77)
+    private val inputPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(70, 180, 110)
         style = Paint.Style.FILL
-        alpha = 210
+        alpha = 180
     }
 
-    private val targetPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(255, 193, 7)
-        strokeWidth = 6f
-        style = Paint.Style.STROKE
-    }
-
-    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(34, 45, 60)
-        textAlign = Paint.Align.CENTER
-        textSize = 36f
-        isFakeBoldText = true
-    }
-
-    private val smallTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(87, 96, 111)
-        textAlign = Paint.Align.CENTER
-        textSize = 24f
+    private val cursorPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(66, 133, 244)
+        strokeWidth = 5f
     }
 
     private var scrollBeat = 0f
@@ -85,6 +68,7 @@ class NoteBandView @JvmOverloads constructor(
     private var lastInputMarkBeat = Float.NEGATIVE_INFINITY
     private var songEndBeat = songNotes.maxOf { it.startBeat + it.lengthBeats }
     private var playbackWasCancelled = false
+
     var onPlaybackFinished: (() -> Unit)? = null
 
     private val animator = ValueAnimator().apply {
@@ -125,7 +109,6 @@ class NoteBandView @JvmOverloads constructor(
 
     fun setSongNotes(notes: List<SongNote>) {
         songNotes = notes
-        lanes = notes.map { it.name }.distinct()
         inputMarks = emptyList()
         lastInputMarkBeat = Float.NEGATIVE_INFINITY
         currentNoteName = null
@@ -165,11 +148,11 @@ class NoteBandView @JvmOverloads constructor(
     }
 
     private fun addInputMark(noteName: String) {
-        if (noteName !in lanes) return
         if (scrollBeat - lastInputMarkBeat < MIN_INPUT_MARK_BEAT_SPACING) return
 
         inputMarks = (inputMarks + InputMark(noteName, scrollBeat))
             .takeLast(MAX_INPUT_MARKS)
+
         lastInputMarkBeat = scrollBeat
     }
 
@@ -178,55 +161,69 @@ class NoteBandView @JvmOverloads constructor(
 
         val contentWidth = width - paddingLeft - paddingRight
         val contentHeight = height - paddingTop - paddingBottom
-        if (contentWidth <= 0 || contentHeight <= 0 || lanes.isEmpty()) return
+        if (contentWidth <= 0 || contentHeight <= 0) return
 
-        val laneHeight = contentHeight / lanes.size.toFloat()
-        val beatWidth = max(90f, contentWidth / 4f)
-        val targetX = paddingLeft + contentWidth * 0.36f
+        val targetX = paddingLeft + contentWidth * 0.42f
+        val beatWidth = max(100f, contentWidth / 5f)
 
-        lanes.forEachIndexed { index, laneName ->
-            val top = paddingTop + index * laneHeight
-            val bottom = top + laneHeight - 8f
+        val staffLeft = paddingLeft + 40f
+        val staffRight = width - paddingRight - 20f
+        val lineSpacing = 28f
+        val staffTop = paddingTop + 70f
 
-            canvas.drawRoundRect(
-                RectF(paddingLeft.toFloat(), top, (width - paddingRight).toFloat(), bottom),
-                18f,
-                18f,
-                lanePaint
-            )
-
-            canvas.drawText(laneName, paddingLeft + 36f, top + laneHeight * 0.58f, smallTextPaint)
+        for (i in 0 until 5) {
+            val y = staffTop + i * lineSpacing
+            canvas.drawLine(staffLeft, y, staffRight.toFloat(), y, staffPaint)
         }
 
-        canvas.drawLine(targetX, paddingTop.toFloat(), targetX, (height - paddingBottom).toFloat(), targetPaint)
+        canvas.drawLine(
+            targetX,
+            staffTop - 55f,
+            targetX,
+            staffTop + lineSpacing * 5 + 40f,
+            cursorPaint
+        )
 
         inputMarks.forEach { mark ->
-            val laneIndex = lanes.indexOf(mark.noteName)
-            if (laneIndex < 0) return@forEach
-
             val x = targetX + (mark.beat - scrollBeat) * beatWidth
             if (x < paddingLeft || x > width - paddingRight) return@forEach
 
-            val centerY = paddingTop + laneIndex * laneHeight + laneHeight * 0.5f
-            canvas.drawCircle(x, centerY, 12f, inputMarkPaint)
+            val y = noteY(mark.noteName, staffTop, lineSpacing)
+            canvas.drawCircle(x, y, 9f, inputPaint)
         }
 
         songNotes.forEach { note ->
-            val left = targetX + (note.startBeat - scrollBeat) * beatWidth
-            val right = left + note.lengthBeats * beatWidth
+            val x = targetX + (note.startBeat - scrollBeat) * beatWidth
+            if (x < paddingLeft - 40 || x > width - paddingRight + 40) return@forEach
 
-            if (right < paddingLeft || left > width - paddingRight) {
-                return@forEach
+            val y = noteY(note.name, staffTop, lineSpacing)
+            val isActive = currentNoteName == note.name && kotlin.math.abs(note.startBeat - scrollBeat) < 0.55f
+            val paint = if (isActive) activeNotePaint else notePaint
+
+            canvas.save()
+            canvas.rotate(-18f, x, y)
+            canvas.drawOval(x - 14f, y - 10f, x + 14f, y + 10f, paint)
+            canvas.restore()
+
+            canvas.drawLine(x + 12f, y, x + 12f, y - 68f, paint)
+
+            if (note.name == "C4") {
+                canvas.drawLine(x - 24f, y, x + 24f, y, staffPaint)
             }
+        }
+    }
 
-            val top = paddingTop + note.lane * laneHeight + 16f
-            val bottom = top + laneHeight - 40f
-            val isInTarget = targetX in left..right
-            val isMatched = isInTarget && currentNoteName == note.name
-            val paint = if (isMatched) matchedNotePaint else notePaint
-
-            canvas.drawRoundRect(RectF(left, top, right, bottom), 24f, 24f, paint)
-            canvas.drawText(note.name, (left + right) / 2f, top + (bottom - top) * 0.62f, textPaint)
+    private fun noteY(noteName: String, staffTop: Float, spacing: Float): Float {
+        return when (noteName) {
+            "C4" -> staffTop + spacing * 5f
+            "D4" -> staffTop + spacing * 4.5f
+            "E4" -> staffTop + spacing * 4f
+            "F4" -> staffTop + spacing * 3.5f
+            "G4" -> staffTop + spacing * 3f
+            "A4" -> staffTop + spacing * 2.5f
+            "B4" -> staffTop + spacing * 2f
+            "C5" -> staffTop + spacing * 1.5f
+            else -> staffTop + spacing * 4f
         }
     }
 
