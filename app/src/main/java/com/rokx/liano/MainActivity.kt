@@ -2,6 +2,8 @@ package com.rokx.liano
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.database.Cursor
+import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
@@ -9,7 +11,9 @@ import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -18,13 +22,22 @@ import be.tarsos.dsp.io.android.AudioDispatcherFactory
 import be.tarsos.dsp.pitch.PitchProcessor
 import org.json.JSONObject
 import kotlin.math.log2
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity() {
 
     private data class SheetSong(
         val title: String,
-        val notes: List<String>
+        val notes: List<String>,
+        val visualNotes: List<NoteBandView.SongNote> = notes.mapIndexed { index, note ->
+            NoteBandView.SongNote(
+                name = note,
+                startBeat = index * DEFAULT_NOTE_SPACING_BEATS,
+                lengthBeats = DEFAULT_NOTE_LENGTH_BEATS,
+                lane = notes.distinct().indexOf(note)
+            )
+        }
     )
 
     private val RECORD_AUDIO_PERMISSION = Manifest.permission.RECORD_AUDIO
@@ -43,6 +56,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sheetButtonContainer: LinearLayout
     private lateinit var backToMenuButton: Button
     private lateinit var pausePlaybackButton: Button
+    private lateinit var uploadMidiButton: Button
+
+    private val midiPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(::importMidiSong)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,12 +76,16 @@ class MainActivity : AppCompatActivity() {
         sheetButtonContainer = findViewById(R.id.sheetButtonContainer)
         backToMenuButton = findViewById(R.id.backToMenuButton)
         pausePlaybackButton = findViewById(R.id.pausePlaybackButton)
+        uploadMidiButton = findViewById(R.id.uploadMidiButton)
 
         backToMenuButton.setOnClickListener {
             showSheetSelection()
         }
         pausePlaybackButton.setOnClickListener {
             toggleSheetPlayback()
+        }
+        uploadMidiButton.setOnClickListener {
+            midiPicker.launch(arrayOf(MIDI_MIME_TYPE, LEGACY_MIDI_MIME_TYPE, OCTET_STREAM_MIME_TYPE, ANY_FILE_MIME_TYPE))
         }
         noteBand.onPlaybackFinished = {
             pausePlaybackButton.text = "Finished"
@@ -84,25 +106,31 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupSheetButtons() {
-        loadSongsFromAssets().forEach { song ->
-            val button = Button(this).apply {
-                background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_song_button)
-                setTextColor(ContextCompat.getColor(this@MainActivity, android.R.color.black))
-                text = song.title
-                textSize = 22f
-                setPadding(32, 24, 32, 24)
-                setOnClickListener {
-                    openSong(song)
-                }
-            }
+        loadSongsFromAssets().forEach(::addSongButton)
+    }
 
-            val params = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                setMargins(0, 0, 0, 24)
+    private fun addSongButton(song: SheetSong, addToTop: Boolean = false) {
+        val button = Button(this).apply {
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_song_button)
+            setTextColor(ContextCompat.getColor(this@MainActivity, android.R.color.black))
+            text = song.title
+            textSize = 22f
+            setPadding(32, 24, 32, 24)
+            setOnClickListener {
+                openSong(song)
             }
+        }
 
+        val params = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            setMargins(0, 0, 0, 24)
+        }
+
+        if (addToTop) {
+            sheetButtonContainer.addView(button, 0, params)
+        } else {
             sheetButtonContainer.addView(button, params)
         }
     }
@@ -132,22 +160,69 @@ class MainActivity : AppCompatActivity() {
 
         taskText.text = "Play: ${song.notes.joinToString(" ") { it.replace("4", "") }}"
 
-        val lanes = song.notes.distinct()
-        val visualNotes = song.notes.mapIndexed { index, note ->
-            NoteBandView.SongNote(
-                name = note,
-                startBeat = index * 1.4f,
-                lengthBeats = 1f,
-                lane = lanes.indexOf(note)
-            )
-        }
-
-        noteBand.setSongNotes(visualNotes)
+        noteBand.setSongNotes(song.visualNotes)
         pausePlaybackButton.text = "Pause"
         pausePlaybackButton.isEnabled = true
 
         sheetSelectionContainer.visibility = View.GONE
         playContainer.visibility = View.VISIBLE
+    }
+
+    private fun importMidiSong(uri: Uri) {
+        val song = runCatching {
+            val bytes = contentResolver.openInputStream(uri)?.use { inputStream ->
+                inputStream.readBytes()
+            } ?: error("Unable to read MIDI file.")
+
+            createSongFromMidi(
+                title = displayNameForUri(uri),
+                midiSong = MidiNoteExtractor.extractNotes(bytes)
+            )
+        }.getOrElse { error ->
+            Toast.makeText(this, "Could not import MIDI: ${error.message}", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        addSongButton(song, addToTop = true)
+        Toast.makeText(this, "Imported ${song.notes.size} notes", Toast.LENGTH_SHORT).show()
+        openSong(song)
+    }
+
+    private fun createSongFromMidi(title: String, midiSong: MidiNoteExtractor.MidiSong): SheetSong {
+        require(midiSong.notes.isNotEmpty()) { "No notes were found in this MIDI file." }
+
+        val notesToImport = midiSong.notes.take(MAX_IMPORTED_MIDI_NOTES)
+        val firstTick = notesToImport.first().startTick
+        val ticksPerBeat = midiSong.ticksPerQuarterNote.toFloat()
+        val lanes = notesToImport.map { it.name }.distinct()
+        val visualNotes = notesToImport.map { note ->
+            NoteBandView.SongNote(
+                name = note.name,
+                startBeat = max(0f, (note.startTick - firstTick) / ticksPerBeat),
+                lengthBeats = max(MIN_IMPORTED_NOTE_LENGTH_BEATS, note.durationTicks / ticksPerBeat),
+                lane = lanes.indexOf(note.name)
+            )
+        }
+
+        return SheetSong(
+            title = "Imported: $title",
+            notes = notesToImport.map { it.name },
+            visualNotes = visualNotes
+        )
+    }
+
+    private fun displayNameForUri(uri: Uri): String {
+        contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor: Cursor ->
+                if (cursor.moveToFirst()) {
+                    val displayNameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (displayNameIndex >= 0) {
+                        return cursor.getString(displayNameIndex)
+                    }
+                }
+            }
+
+        return uri.lastPathSegment ?: "MIDI song"
     }
 
     private fun showSheetSelection() {
@@ -275,5 +350,13 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val MIN_VOICE_RMS = 0.015
         private const val MIN_PITCH_PROBABILITY = 0.75f
+        private const val DEFAULT_NOTE_SPACING_BEATS = 1.4f
+        private const val DEFAULT_NOTE_LENGTH_BEATS = 1f
+        private const val MIN_IMPORTED_NOTE_LENGTH_BEATS = 0.25f
+        private const val MAX_IMPORTED_MIDI_NOTES = 256
+        private const val MIDI_MIME_TYPE = "audio/midi"
+        private const val LEGACY_MIDI_MIME_TYPE = "audio/x-midi"
+        private const val OCTET_STREAM_MIME_TYPE = "application/octet-stream"
+        private const val ANY_FILE_MIME_TYPE = "*/*"
     }
 }

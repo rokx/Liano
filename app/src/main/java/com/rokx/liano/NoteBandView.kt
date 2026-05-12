@@ -214,23 +214,32 @@ class NoteBandView @JvmOverloads constructor(
     }
 
     private fun noteY(noteName: String, staffTop: Float, spacing: Float): Float {
-        return when (noteName) {
-            "C4" -> staffTop + spacing * 5f
-            "D4" -> staffTop + spacing * 4.5f
-            "E4" -> staffTop + spacing * 4f
-            "F4" -> staffTop + spacing * 3.5f
-            "G4" -> staffTop + spacing * 3f
-            "A4" -> staffTop + spacing * 2.5f
-            "B4" -> staffTop + spacing * 2f
-            "C5" -> staffTop + spacing * 1.5f
-            else -> staffTop + spacing * 4f
-        }
+        val parsedNote = NOTE_NAME_PATTERN.matchEntire(noteName) ?: return staffTop + spacing * 4f
+        val letter = parsedNote.groupValues[1]
+        val octave = parsedNote.groupValues[2].toIntOrNull() ?: return staffTop + spacing * 4f
+        val scaleIndex = NOTE_SCALE_INDEX[letter] ?: return staffTop + spacing * 4f
+        val diatonicStepsFromC4 = (octave - 4) * NATURAL_NOTES_PER_OCTAVE + scaleIndex
+
+        return staffTop + spacing * (C4_STAFF_POSITION - diatonicStepsFromC4 * STAFF_POSITION_PER_STEP)
     }
 
     companion object {
         private const val MAX_INPUT_MARKS = 260
         private const val MIN_INPUT_MARK_BEAT_SPACING = 0.06f
         private const val MS_PER_BEAT = 1250L
+        private const val NATURAL_NOTES_PER_OCTAVE = 7
+        private const val C4_STAFF_POSITION = 5f
+        private const val STAFF_POSITION_PER_STEP = 0.5f
+        private val NOTE_NAME_PATTERN = Regex("^([A-G])#?(-?\\d+)$")
+        private val NOTE_SCALE_INDEX = mapOf(
+            "C" to 0,
+            "D" to 1,
+            "E" to 2,
+            "F" to 3,
+            "G" to 4,
+            "A" to 5,
+            "B" to 6
+        )
     }
 
     private fun configurePlaybackAnimator() {
