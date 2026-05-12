@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
@@ -43,8 +44,16 @@ class MainActivity : AppCompatActivity() {
     private val RECORD_AUDIO_PERMISSION = Manifest.permission.RECORD_AUDIO
     private val REQUEST_MIC = 100
 
+    private enum class InputMode {
+        MICROPHONE,
+        USB_PIANO
+    }
+
     private lateinit var exercise: SimpleNoteExercise
     private var dispatcher: AudioDispatcher? = null
+    private var usbMidiInput: UsbMidiPianoInput? = null
+    private var inputMode = InputMode.MICROPHONE
+    private val pressedMidiNotes = mutableSetOf<Int>()
 
     private lateinit var pitchText: TextView
 
@@ -57,6 +66,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var backToMenuButton: Button
     private lateinit var pausePlaybackButton: Button
     private lateinit var uploadMidiButton: Button
+    private lateinit var inputModeButton: Button
+    private lateinit var playInputModeButton: Button
+    private lateinit var pianoTestButton: Button
+    private lateinit var pianoTestContainer: View
+    private lateinit var backFromPianoTestButton: Button
+    private lateinit var testInputModeButton: Button
+    private lateinit var pianoTestStatusText: TextView
+    private lateinit var pianoKeyboardView: PianoKeyboardView
+    private lateinit var pressedNotesText: TextView
 
     private val midiPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(::importMidiSong)
@@ -77,6 +95,15 @@ class MainActivity : AppCompatActivity() {
         backToMenuButton = findViewById(R.id.backToMenuButton)
         pausePlaybackButton = findViewById(R.id.pausePlaybackButton)
         uploadMidiButton = findViewById(R.id.uploadMidiButton)
+        inputModeButton = findViewById(R.id.inputModeButton)
+        playInputModeButton = findViewById(R.id.playInputModeButton)
+        pianoTestButton = findViewById(R.id.pianoTestButton)
+        pianoTestContainer = findViewById(R.id.pianoTestContainer)
+        backFromPianoTestButton = findViewById(R.id.backFromPianoTestButton)
+        testInputModeButton = findViewById(R.id.testInputModeButton)
+        pianoTestStatusText = findViewById(R.id.pianoTestStatusText)
+        pianoKeyboardView = findViewById(R.id.pianoKeyboardView)
+        pressedNotesText = findViewById(R.id.pressedNotesText)
 
         backToMenuButton.setOnClickListener {
             showSheetSelection()
@@ -87,13 +114,28 @@ class MainActivity : AppCompatActivity() {
         uploadMidiButton.setOnClickListener {
             midiPicker.launch(arrayOf(MIDI_MIME_TYPE, LEGACY_MIDI_MIME_TYPE, OCTET_STREAM_MIME_TYPE, ANY_FILE_MIME_TYPE))
         }
+        inputModeButton.setOnClickListener {
+            toggleInputMode()
+        }
+        playInputModeButton.setOnClickListener {
+            toggleInputMode()
+        }
+        testInputModeButton.setOnClickListener {
+            toggleInputMode()
+        }
+        pianoTestButton.setOnClickListener {
+            showPianoTest()
+        }
+        backFromPianoTestButton.setOnClickListener {
+            showSheetSelection()
+        }
         noteBand.onPlaybackFinished = {
             pausePlaybackButton.text = "Finished"
             pausePlaybackButton.isEnabled = false
         }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (playContainer.visibility == View.VISIBLE) {
+                if (playContainer.visibility == View.VISIBLE || pianoTestContainer.visibility == View.VISIBLE) {
                     showSheetSelection()
                 } else {
                     isEnabled = false
@@ -102,7 +144,8 @@ class MainActivity : AppCompatActivity() {
             }
         })
         setupSheetButtons()
-        requestMicPermission()
+        updateInputModeButtons()
+        startSelectedInput()
     }
 
     private fun setupSheetButtons() {
@@ -228,7 +271,16 @@ class MainActivity : AppCompatActivity() {
     private fun showSheetSelection() {
         noteBand.pausePlayback()
         playContainer.visibility = View.GONE
+        pianoTestContainer.visibility = View.GONE
         sheetSelectionContainer.visibility = View.VISIBLE
+    }
+
+    private fun showPianoTest() {
+        noteBand.pausePlayback()
+        sheetSelectionContainer.visibility = View.GONE
+        playContainer.visibility = View.GONE
+        pianoTestContainer.visibility = View.VISIBLE
+        setInputMode(InputMode.USB_PIANO)
     }
 
     private fun toggleSheetPlayback() {
@@ -248,9 +300,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestMicPermission() {
+        stopUsbPianoInput()
         if (ContextCompat.checkSelfPermission(this, RECORD_AUDIO_PERMISSION)
             != PackageManager.PERMISSION_GRANTED
         ) {
+            pitchText.text = "Microphone permission needed"
+            pianoTestStatusText.text = "Microphone permission needed"
             ActivityCompat.requestPermissions(
                 this,
                 arrayOf(RECORD_AUDIO_PERMISSION),
@@ -272,11 +327,18 @@ class MainActivity : AppCompatActivity() {
             grantResults.isNotEmpty() &&
             grantResults[0] == PackageManager.PERMISSION_GRANTED
         ) {
-            startPitchDetection()
+            if (inputMode == InputMode.MICROPHONE) {
+                startPitchDetection()
+            }
+        } else if (requestCode == REQUEST_MIC) {
+            pitchText.text = "Microphone permission denied"
+            pianoTestStatusText.text = "Microphone permission denied"
         }
     }
 
     private fun startPitchDetection() {
+        stopUsbPianoInput()
+        dispatcher?.stop()
         dispatcher = AudioDispatcherFactory.fromDefaultMicrophone(22050, 1024, 0)
 
         val pitchDetector = PitchProcessor(
@@ -294,18 +356,16 @@ class MainActivity : AppCompatActivity() {
                     Log.d("Pitch", "Detected pitch: $pitchInHz Hz")
 
                     val noteName = frequencyToNoteName(pitchInHz)
-                    pitchText.text = "$noteName (${pitchInHz.toInt()} Hz)"
-                    noteBand.setDetectedNote(noteName)
-
-                    if (playContainer.visibility == View.VISIBLE &&
-                        ::exercise.isInitialized &&
-                        exercise.onNoteDetected(noteName, SystemClock.elapsedRealtime())
-                    ) {
-                        showGreatWork()
-                    }
+                    val noteNumber = midiNoteNumberForName(noteName)
+                    pitchText.text = "Microphone: $noteName (${pitchInHz.toInt()} Hz)"
+                    pianoTestStatusText.text = "Microphone: $noteName (${pitchInHz.toInt()} Hz)"
+                    setPressedMidiNotes(noteNumber?.let(::setOf).orEmpty())
+                    handleDetectedNote(noteName)
                 } else {
-                    pitchText.text = "Waiting for voice..."
+                    pitchText.text = "Waiting for microphone..."
+                    pianoTestStatusText.text = "Waiting for microphone..."
                     noteBand.clearDetectedNote()
+                    setPressedMidiNotes(emptySet())
                 }
             }
         }
@@ -315,6 +375,112 @@ class MainActivity : AppCompatActivity() {
         Thread {
             dispatcher?.run()
         }.start()
+    }
+
+    private fun toggleInputMode() {
+        setInputMode(
+            when (inputMode) {
+                InputMode.MICROPHONE -> InputMode.USB_PIANO
+                InputMode.USB_PIANO -> InputMode.MICROPHONE
+            }
+        )
+    }
+
+    private fun setInputMode(mode: InputMode) {
+        if (inputMode == mode && (dispatcher != null || usbMidiInput != null)) return
+        inputMode = mode
+        updateInputModeButtons()
+        setPressedMidiNotes(emptySet())
+        noteBand.clearDetectedNote()
+        startSelectedInput()
+    }
+
+    private fun updateInputModeButtons() {
+        val text = when (inputMode) {
+            InputMode.MICROPHONE -> "Input: Microphone"
+            InputMode.USB_PIANO -> "Input: USB piano"
+        }
+        inputModeButton.text = text
+        playInputModeButton.text = text
+        testInputModeButton.text = text
+    }
+
+    private fun startSelectedInput() {
+        when (inputMode) {
+            InputMode.MICROPHONE -> requestMicPermission()
+            InputMode.USB_PIANO -> startUsbPianoInput()
+        }
+    }
+
+    private fun startUsbPianoInput() {
+        dispatcher?.stop()
+        dispatcher = null
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            pitchText.text = "USB piano needs Android 6.0 or newer"
+            pianoTestStatusText.text = "USB piano needs Android 6.0 or newer"
+            return
+        }
+
+        stopUsbPianoInput()
+        usbMidiInput = UsbMidiPianoInput(this, object : UsbMidiPianoInput.Listener {
+            override fun onMidiStatusChanged(status: String) {
+                runOnUiThread {
+                    pitchText.text = status
+                    pianoTestStatusText.text = status
+                }
+            }
+
+            override fun onMidiNoteOn(noteNumber: Int, noteName: String) {
+                runOnUiThread {
+                    pressedMidiNotes += noteNumber
+                    updatePressedNotes()
+                    pitchText.text = "USB piano: $noteName"
+                    pianoTestStatusText.text = "USB piano: $noteName"
+                    handleDetectedNote(noteName)
+                }
+            }
+
+            override fun onMidiNoteOff(noteNumber: Int, noteName: String) {
+                runOnUiThread {
+                    pressedMidiNotes -= noteNumber
+                    updatePressedNotes()
+                    if (pressedMidiNotes.isEmpty()) {
+                        noteBand.clearDetectedNote()
+                    }
+                }
+            }
+        }).also { it.start() }
+    }
+
+    private fun stopUsbPianoInput() {
+        usbMidiInput?.stop()
+        usbMidiInput = null
+    }
+
+    private fun handleDetectedNote(noteName: String) {
+        noteBand.setDetectedNote(noteName)
+
+        if (playContainer.visibility == View.VISIBLE &&
+            ::exercise.isInitialized &&
+            exercise.onNoteDetected(noteName, SystemClock.elapsedRealtime())
+        ) {
+            showGreatWork()
+        }
+    }
+
+    private fun setPressedMidiNotes(notes: Set<Int>) {
+        pressedMidiNotes.clear()
+        pressedMidiNotes += notes
+        updatePressedNotes()
+    }
+
+    private fun updatePressedNotes() {
+        pianoKeyboardView.setPressedNotes(pressedMidiNotes)
+        val pressedText = pressedMidiNotes
+            .sorted()
+            .joinToString(" ") { MidiNoteExtractor.noteName(it) }
+            .ifBlank { "none" }
+        pressedNotesText.text = "Pressed: $pressedText"
     }
 
     private fun showGreatWork() {
@@ -347,6 +513,19 @@ class MainActivity : AppCompatActivity() {
         return "$name$octave"
     }
 
+    private fun midiNoteNumberForName(noteName: String): Int? {
+        val match = NOTE_NAME_PATTERN.matchEntire(noteName) ?: return null
+        val pitchClass = NOTE_NAME_TO_OFFSET[match.groupValues[1]] ?: return null
+        val octave = match.groupValues[2].toIntOrNull() ?: return null
+        return (octave + 1) * NOTES_PER_OCTAVE + pitchClass
+    }
+
+    override fun onDestroy() {
+        dispatcher?.stop()
+        stopUsbPianoInput()
+        super.onDestroy()
+    }
+
     companion object {
         private const val MIN_VOICE_RMS = 0.015
         private const val MIN_PITCH_PROBABILITY = 0.75f
@@ -358,5 +537,21 @@ class MainActivity : AppCompatActivity() {
         private const val LEGACY_MIDI_MIME_TYPE = "audio/x-midi"
         private const val OCTET_STREAM_MIME_TYPE = "application/octet-stream"
         private const val ANY_FILE_MIME_TYPE = "*/*"
+        private const val NOTES_PER_OCTAVE = 12
+        private val NOTE_NAME_PATTERN = Regex("^([A-G]#?)(-?\\d+)$")
+        private val NOTE_NAME_TO_OFFSET = mapOf(
+            "C" to 0,
+            "C#" to 1,
+            "D" to 2,
+            "D#" to 3,
+            "E" to 4,
+            "F" to 5,
+            "F#" to 6,
+            "G" to 7,
+            "G#" to 8,
+            "A" to 9,
+            "A#" to 10,
+            "B" to 11
+        )
     }
 }
