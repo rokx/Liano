@@ -62,6 +62,11 @@ class NoteBandView @JvmOverloads constructor(
         strokeWidth = 5f
     }
 
+    private val clefPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(45, 58, 80)
+        textAlign = Paint.Align.LEFT
+    }
+
     private var scrollBeat = 0f
     private var currentNoteName: String? = null
     private var inputMarks = emptyList<InputMark>()
@@ -166,21 +171,21 @@ class NoteBandView @JvmOverloads constructor(
         val targetX = paddingLeft + contentWidth * 0.42f
         val beatWidth = max(100f, contentWidth / 5f)
 
-        val staffLeft = paddingLeft + 40f
+        val staffLeft = paddingLeft + 86f
         val staffRight = width - paddingRight - 20f
-        val lineSpacing = 28f
-        val staffTop = paddingTop + 70f
+        val lineSpacing = max(15f, contentHeight / 15f)
+        val trebleStaffTop = paddingTop + contentHeight * 0.08f
+        val bassStaffTop = trebleStaffTop + lineSpacing * 7.1f
 
-        for (i in 0 until 5) {
-            val y = staffTop + i * lineSpacing
-            canvas.drawLine(staffLeft, y, staffRight.toFloat(), y, staffPaint)
-        }
+        drawStaff(canvas, staffLeft, staffRight.toFloat(), trebleStaffTop, lineSpacing)
+        drawStaff(canvas, staffLeft, staffRight.toFloat(), bassStaffTop, lineSpacing)
+        drawClefs(canvas, paddingLeft + 18f, trebleStaffTop, bassStaffTop, lineSpacing)
 
         canvas.drawLine(
             targetX,
-            staffTop - 55f,
+            trebleStaffTop - lineSpacing * 1.5f,
             targetX,
-            staffTop + lineSpacing * 5 + 40f,
+            bassStaffTop + lineSpacing * 4.75f,
             cursorPaint
         )
 
@@ -188,7 +193,7 @@ class NoteBandView @JvmOverloads constructor(
             val x = targetX + (mark.beat - scrollBeat) * beatWidth
             if (x < paddingLeft || x > width - paddingRight) return@forEach
 
-            val y = noteY(mark.noteName, staffTop, lineSpacing)
+            val y = noteY(mark.noteName, trebleStaffTop, bassStaffTop, lineSpacing)
             canvas.drawCircle(x, y, 9f, inputPaint)
         }
 
@@ -196,7 +201,7 @@ class NoteBandView @JvmOverloads constructor(
             val x = targetX + (note.startBeat - scrollBeat) * beatWidth
             if (x < paddingLeft - 40 || x > width - paddingRight + 40) return@forEach
 
-            val y = noteY(note.name, staffTop, lineSpacing)
+            val y = noteY(note.name, trebleStaffTop, bassStaffTop, lineSpacing)
             val isActive = currentNoteName == note.name && kotlin.math.abs(note.startBeat - scrollBeat) < 0.55f
             val paint = if (isActive) activeNotePaint else notePaint
 
@@ -213,14 +218,31 @@ class NoteBandView @JvmOverloads constructor(
         }
     }
 
-    private fun noteY(noteName: String, staffTop: Float, spacing: Float): Float {
-        val parsedNote = NOTE_NAME_PATTERN.matchEntire(noteName) ?: return staffTop + spacing * 4f
-        val letter = parsedNote.groupValues[1]
-        val octave = parsedNote.groupValues[2].toIntOrNull() ?: return staffTop + spacing * 4f
-        val scaleIndex = NOTE_SCALE_INDEX[letter] ?: return staffTop + spacing * 4f
-        val diatonicStepsFromC4 = (octave - 4) * NATURAL_NOTES_PER_OCTAVE + scaleIndex
+    private fun drawStaff(canvas: Canvas, left: Float, right: Float, staffTop: Float, spacing: Float) {
+        for (i in 0 until 5) {
+            val y = staffTop + i * spacing
+            canvas.drawLine(left, y, right, y, staffPaint)
+        }
+    }
 
-        return staffTop + spacing * (C4_STAFF_POSITION - diatonicStepsFromC4 * STAFF_POSITION_PER_STEP)
+    private fun drawClefs(canvas: Canvas, x: Float, trebleStaffTop: Float, bassStaffTop: Float, spacing: Float) {
+        clefPaint.textSize = spacing * 3.9f
+        canvas.drawText(TREBLE_CLEF, x, trebleStaffTop + spacing * 3.45f, clefPaint)
+
+        clefPaint.textSize = spacing * 2.9f
+        canvas.drawText(BASS_CLEF, x + spacing * 0.2f, bassStaffTop + spacing * 3.15f, clefPaint)
+    }
+
+    private fun noteY(noteName: String, trebleStaffTop: Float, bassStaffTop: Float, spacing: Float): Float {
+        val parsedNote = NOTE_NAME_PATTERN.matchEntire(noteName) ?: return trebleStaffTop + spacing * 4f
+        val letter = parsedNote.groupValues[1]
+        val octave = parsedNote.groupValues[2].toIntOrNull() ?: return trebleStaffTop + spacing * 4f
+        val scaleIndex = NOTE_SCALE_INDEX[letter] ?: return trebleStaffTop + spacing * 4f
+        val diatonicStepsFromC4 = (octave - 4) * NATURAL_NOTES_PER_OCTAVE + scaleIndex
+        val staffTop = if (octave < 4) bassStaffTop else trebleStaffTop
+        val c4Position = if (octave < 4) BASS_C4_STAFF_POSITION else TREBLE_C4_STAFF_POSITION
+
+        return staffTop + spacing * (c4Position - diatonicStepsFromC4 * STAFF_POSITION_PER_STEP)
     }
 
     companion object {
@@ -228,8 +250,11 @@ class NoteBandView @JvmOverloads constructor(
         private const val MIN_INPUT_MARK_BEAT_SPACING = 0.06f
         private const val MS_PER_BEAT = 1250L
         private const val NATURAL_NOTES_PER_OCTAVE = 7
-        private const val C4_STAFF_POSITION = 5f
+        private const val TREBLE_C4_STAFF_POSITION = 5f
+        private const val BASS_C4_STAFF_POSITION = -1f
         private const val STAFF_POSITION_PER_STEP = 0.5f
+        private const val TREBLE_CLEF = "\uD834\uDD1E"
+        private const val BASS_CLEF = "\uD834\uDD22"
         private val NOTE_NAME_PATTERN = Regex("^([A-G])#?(-?\\d+)$")
         private val NOTE_SCALE_INDEX = mapOf(
             "C" to 0,

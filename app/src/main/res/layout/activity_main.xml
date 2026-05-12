@@ -81,6 +81,7 @@
         android:id="@+id/playContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:background="#EAF3FF"
         android:gravity="center_horizontal"
         android:orientation="vertical"
         android:padding="16dp"
@@ -110,7 +111,7 @@
         <com.rokx.liano.NoteBandView
             android:id="@+id/noteBand"
             android:layout_width="match_parent"
-            android:layout_height="240dp"
+            android:layout_height="300dp"
             android:layout_marginBottom="24dp" />
 
         <TextView
