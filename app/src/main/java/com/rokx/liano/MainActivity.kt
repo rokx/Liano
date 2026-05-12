@@ -176,8 +176,8 @@ class MainActivity : AppCompatActivity() {
             background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_song_button)
             setTextColor(ContextCompat.getColor(this@MainActivity, android.R.color.black))
             text = song.title
-            textSize = 22f
-            setPadding(32, 24, 32, 24)
+            textSize = 18f
+            setPadding(24, 14, 24, 14)
             setOnClickListener {
                 openSong(song)
             }
@@ -187,7 +187,7 @@ class MainActivity : AppCompatActivity() {
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply {
-            setMargins(0, 0, 0, 24)
+            setMargins(0, 0, 0, 12)
         }
 
         if (addToTop) {

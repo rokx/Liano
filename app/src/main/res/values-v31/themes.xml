@@ -3,5 +3,7 @@
 
     <style name="Theme.Liano" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:windowBackground">@drawable/bg_launch_splash</item>
+        <item name="android:windowSplashScreenBackground">#4B89D8</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_liano_launcher</item>
     </style>
 </resources>

@@ -8,75 +8,87 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@drawable/bg_main_menu"
-        android:gravity="center"
+        android:gravity="center_horizontal"
         android:orientation="vertical"
-        android:padding="20dp">
-
-        <ImageView
-            android:layout_width="78dp"
-            android:layout_height="78dp"
-            android:layout_marginBottom="10dp"
-            android:contentDescription="@string/app_logo"
-            android:scaleType="centerInside"
-            android:src="@drawable/ic_liano_launcher" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="14dp"
-            android:text="Choose a song"
-            android:textColor="@android:color/white"
-            android:textSize="30sp"
-            android:textStyle="bold" />
+        android:padding="14dp">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
+            android:gravity="top"
             android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/uploadMidiButton"
+            <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginEnd="8dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_song_button"
-                android:minHeight="52dp"
-                android:padding="10dp"
-                android:text="Upload MIDI"
-                android:textColor="@android:color/black"
-                android:textSize="14sp" />
+                android:layout_weight="1.35"
+                android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/inputModeButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginHorizontal="4dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_song_button"
-                android:minHeight="52dp"
-                android:padding="10dp"
-                android:text="Input: Microphone"
-                android:textColor="@android:color/black"
-                android:textSize="14sp" />
+                <Button
+                    android:id="@+id/uploadMidiButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_song_button"
+                    android:minHeight="44dp"
+                    android:padding="8dp"
+                    android:text="Upload MIDI"
+                    android:textColor="@android:color/black"
+                    android:textSize="13sp" />
 
-            <Button
-                android:id="@+id/pianoTestButton"
+                <Button
+                    android:id="@+id/inputModeButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="3dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_song_button"
+                    android:minHeight="44dp"
+                    android:padding="8dp"
+                    android:text="Input: Microphone"
+                    android:textColor="@android:color/black"
+                    android:textSize="13sp" />
+
+                <Button
+                    android:id="@+id/pianoTestButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_song_button"
+                    android:minHeight="44dp"
+                    android:padding="8dp"
+                    android:text="Test USB piano"
+                    android:textColor="@android:color/black"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <Space
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_song_button"
-                android:minHeight="52dp"
-                android:padding="10dp"
-                android:text="Test USB piano"
-                android:textColor="@android:color/black"
-                android:textSize="14sp" />
+                android:layout_weight="0.65" />
+
+            <ImageView
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:contentDescription="@string/app_logo"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_liano_launcher" />
         </LinearLayout>
 
+        <TextView
+            android:layout_width="520dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp"
+            android:text="Songs"
+            android:textColor="@android:color/white"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
         <ScrollView
-            android:layout_width="match_parent"
+            android:layout_width="520dp"
             android:layout_height="0dp"
             android:layout_weight="1"
             android:fillViewport="false"
