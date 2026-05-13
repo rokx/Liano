@@ -8,8 +8,11 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.util.AttributeSet
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.animation.LinearInterpolator
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToLong
 
@@ -73,6 +76,9 @@ class NoteBandView @JvmOverloads constructor(
     private var lastInputMarkBeat = Float.NEGATIVE_INFINITY
     private var songEndBeat = songNotes.maxOf { it.startBeat + it.lengthBeats }
     private var playbackWasCancelled = false
+    private var lastDragX = 0f
+    private var hasDragged = false
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
 
     var onPlaybackFinished: (() -> Unit)? = null
 
@@ -161,6 +167,65 @@ class NoteBandView @JvmOverloads constructor(
         lastInputMarkBeat = scrollBeat
     }
 
+    private fun isManualScrollEnabled(): Boolean = animator.isPaused && !hasPlaybackFinished()
+
+    private fun scrollByPixels(deltaX: Float) {
+        val beatWidth = currentBeatWidth()
+        if (beatWidth <= 0f) return
+
+        scrollBeat = (scrollBeat - deltaX / beatWidth).coerceIn(0f, songEndBeat)
+        animator.currentPlayTime = (scrollBeat * MS_PER_BEAT).roundToLong()
+        invalidate()
+    }
+
+    private fun currentBeatWidth(): Float {
+        val contentWidth = width - paddingLeft - paddingRight
+        return if (contentWidth > 0) max(MIN_BEAT_WIDTH_PX, contentWidth / VISIBLE_BEATS) else 0f
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (!isManualScrollEnabled()) {
+            return super.onTouchEvent(event)
+        }
+
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                lastDragX = event.x
+                hasDragged = false
+                parent?.requestDisallowInterceptTouchEvent(true)
+                return true
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                val deltaX = event.x - lastDragX
+                if (abs(deltaX) >= touchSlop || hasDragged) {
+                    hasDragged = true
+                    scrollByPixels(deltaX)
+                    lastDragX = event.x
+                }
+                return true
+            }
+
+            MotionEvent.ACTION_UP -> {
+                parent?.requestDisallowInterceptTouchEvent(false)
+                if (!hasDragged) performClick()
+                return true
+            }
+
+            MotionEvent.ACTION_CANCEL -> {
+                parent?.requestDisallowInterceptTouchEvent(false)
+                return true
+            }
+        }
+
+        return true
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
@@ -169,7 +234,7 @@ class NoteBandView @JvmOverloads constructor(
         if (contentWidth <= 0 || contentHeight <= 0) return
 
         val targetX = paddingLeft + contentWidth * 0.42f
-        val beatWidth = max(100f, contentWidth / 5f)
+        val beatWidth = currentBeatWidth()
 
         val staffLeft = paddingLeft + 86f
         val staffRight = width - paddingRight - 20f
@@ -253,6 +318,8 @@ class NoteBandView @JvmOverloads constructor(
         private const val TREBLE_C4_STAFF_POSITION = 5f
         private const val BASS_C4_STAFF_POSITION = -1f
         private const val STAFF_POSITION_PER_STEP = 0.5f
+        private const val MIN_BEAT_WIDTH_PX = 100f
+        private const val VISIBLE_BEATS = 5f
         private const val TREBLE_CLEF = "\uD834\uDD1E"
         private const val BASS_CLEF = "\uD834\uDD22"
         private val NOTE_NAME_PATTERN = Regex("^([A-G])#?(-?\\d+)$")
