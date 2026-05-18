@@ -4,12 +4,18 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -31,9 +37,14 @@ import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity() {
 
+    private data class MetronomeSettings(
+        val beatsPerMinute: Int = DEFAULT_BEATS_PER_MINUTE
+    )
+
     private data class SheetSong(
         val title: String,
         val notes: List<String>,
+        val metronomeSettings: MetronomeSettings = MetronomeSettings(),
         val visualNotes: List<NoteBandView.SongNote> = notes.mapIndexed { index, note ->
             NoteBandView.SongNote(
                 name = note,
@@ -60,8 +71,15 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var pitchText: TextView
 
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val metronomeTone = ToneGenerator(AudioManager.STREAM_MUSIC, 85)
+    private var currentBpm = DEFAULT_BEATS_PER_MINUTE
+    private var isMetronomePlaying = false
+    private var bpmHoldRunnable: Runnable? = null
+
     private lateinit var greatWorkText: TextView
     private lateinit var taskText: TextView
+    private lateinit var metronomeSpeedText: TextView
     private lateinit var noteBand: NoteBandView
     private lateinit var playContainer: View
     private lateinit var sheetSelectionContainer: View
@@ -72,6 +90,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var inputModeButton: Button
     private lateinit var playInputModeButton: Button
     private lateinit var pianoTestButton: Button
+    private lateinit var openMetronomeButton: Button
+    private lateinit var metronomeContainer: View
+    private lateinit var backFromMetronomeButton: Button
+    private lateinit var metronomeStartStopButton: Button
+    private lateinit var decreaseBpmButton: Button
+    private lateinit var increaseBpmButton: Button
+    private lateinit var bpmValueText: TextView
+    private lateinit var keepMetronomeInBackgroundCheckBox: CheckBox
     private lateinit var pianoTestContainer: View
     private lateinit var backFromPianoTestButton: Button
     private lateinit var testInputModeButton: Button
@@ -92,6 +118,7 @@ class MainActivity : AppCompatActivity() {
 
         greatWorkText = findViewById(R.id.greatWorkText)
         taskText = findViewById(R.id.taskText)
+        metronomeSpeedText = findViewById(R.id.metronomeSpeedText)
         noteBand = findViewById(R.id.noteBand)
         playContainer = findViewById(R.id.playContainer)
         sheetSelectionContainer = findViewById(R.id.sheetSelectionContainer)
@@ -102,6 +129,14 @@ class MainActivity : AppCompatActivity() {
         inputModeButton = findViewById(R.id.inputModeButton)
         playInputModeButton = findViewById(R.id.playInputModeButton)
         pianoTestButton = findViewById(R.id.pianoTestButton)
+        openMetronomeButton = findViewById(R.id.openMetronomeButton)
+        metronomeContainer = findViewById(R.id.metronomeContainer)
+        backFromMetronomeButton = findViewById(R.id.backFromMetronomeButton)
+        metronomeStartStopButton = findViewById(R.id.metronomeStartStopButton)
+        decreaseBpmButton = findViewById(R.id.decreaseBpmButton)
+        increaseBpmButton = findViewById(R.id.increaseBpmButton)
+        bpmValueText = findViewById(R.id.bpmValueText)
+        keepMetronomeInBackgroundCheckBox = findViewById(R.id.keepMetronomeInBackgroundCheckBox)
         pianoTestContainer = findViewById(R.id.pianoTestContainer)
         backFromPianoTestButton = findViewById(R.id.backFromPianoTestButton)
         testInputModeButton = findViewById(R.id.testInputModeButton)
@@ -130,6 +165,27 @@ class MainActivity : AppCompatActivity() {
         pianoTestButton.setOnClickListener {
             showPianoTest()
         }
+        openMetronomeButton.setOnClickListener {
+            showMetronomeSettings()
+        }
+        backFromMetronomeButton.setOnClickListener {
+            showSheetSelection()
+        }
+        metronomeStartStopButton.setOnClickListener {
+            toggleMetronome()
+        }
+        decreaseBpmButton.setOnClickListener {
+            changeBpm(-BPM_STEP)
+        }
+        increaseBpmButton.setOnClickListener {
+            changeBpm(BPM_STEP)
+        }
+        decreaseBpmButton.setOnTouchListener { _, event ->
+            handleBpmHold(event, -BPM_STEP)
+        }
+        increaseBpmButton.setOnTouchListener { _, event ->
+            handleBpmHold(event, BPM_STEP)
+        }
         backFromPianoTestButton.setOnClickListener {
             showSheetSelection()
         }
@@ -139,7 +195,11 @@ class MainActivity : AppCompatActivity() {
         }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (playContainer.visibility == View.VISIBLE || pianoTestContainer.visibility == View.VISIBLE) {
+                if (
+                    playContainer.visibility == View.VISIBLE ||
+                    pianoTestContainer.visibility == View.VISIBLE ||
+                    metronomeContainer.visibility == View.VISIBLE
+                ) {
                     showSheetSelection()
                 } else {
                     isEnabled = false
@@ -148,6 +208,7 @@ class MainActivity : AppCompatActivity() {
             }
         })
         setupSheetButtons()
+        updateMetronomeUi()
         updateInputModeButtons()
         startSelectedInput()
     }
@@ -211,7 +272,13 @@ class MainActivity : AppCompatActivity() {
 
                 SheetSong(
                     title = json.getString("title"),
-                    notes = notes
+                    notes = notes,
+                    metronomeSettings = MetronomeSettings(
+                        beatsPerMinute = json.optJSONObject("metronome")
+                            ?.optInt("beatsPerMinute", DEFAULT_BEATS_PER_MINUTE)
+                            ?.coerceToValidBpm()
+                            ?: DEFAULT_BEATS_PER_MINUTE
+                    )
                 )
             }
         }
@@ -219,9 +286,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun openSong(song: SheetSong) {
         exercise = SimpleNoteExercise(song.notes)
+        setBpm(song.metronomeSettings.beatsPerMinute)
 
         taskText.text = "Play: ${song.notes.joinToString(" ") { it.replace("4", "") }}"
+        metronomeSpeedText.text = "Metronome: $currentBpm BPM"
 
+        noteBand.setBeatsPerMinute(currentBpm)
         noteBand.setSongNotes(song.visualNotes)
         pausePlaybackButton.text = "Pause"
         pausePlaybackButton.isEnabled = true
@@ -269,6 +339,7 @@ class MainActivity : AppCompatActivity() {
         return SheetSong(
             title = "Imported: $title",
             notes = notesToImport.map { it.name },
+            metronomeSettings = MetronomeSettings(currentBpm),
             visualNotes = visualNotes
         )
     }
@@ -291,6 +362,7 @@ class MainActivity : AppCompatActivity() {
         noteBand.pausePlayback()
         playContainer.visibility = View.GONE
         pianoTestContainer.visibility = View.GONE
+        metronomeContainer.visibility = View.GONE
         sheetSelectionContainer.visibility = View.VISIBLE
     }
 
@@ -298,8 +370,18 @@ class MainActivity : AppCompatActivity() {
         noteBand.pausePlayback()
         sheetSelectionContainer.visibility = View.GONE
         playContainer.visibility = View.GONE
+        metronomeContainer.visibility = View.GONE
         pianoTestContainer.visibility = View.VISIBLE
         setInputMode(InputMode.USB_PIANO)
+    }
+
+    private fun showMetronomeSettings() {
+        noteBand.pausePlayback()
+        sheetSelectionContainer.visibility = View.GONE
+        playContainer.visibility = View.GONE
+        pianoTestContainer.visibility = View.GONE
+        metronomeContainer.visibility = View.VISIBLE
+        updateMetronomeUi()
     }
 
     private fun toggleSheetPlayback() {
@@ -315,6 +397,103 @@ class MainActivity : AppCompatActivity() {
         } else {
             noteBand.pausePlayback()
             pausePlaybackButton.text = "Resume"
+        }
+    }
+
+    private val metronomeTickRunnable = object : Runnable {
+        override fun run() {
+            if (!isMetronomePlaying) return
+
+            metronomeTone.startTone(ToneGenerator.TONE_PROP_BEEP, METRONOME_TICK_MS)
+            mainHandler.postDelayed(this, 60_000L / currentBpm)
+        }
+    }
+
+    private fun toggleMetronome() {
+        if (isMetronomePlaying) {
+            stopMetronome()
+        } else {
+            startMetronome()
+        }
+    }
+
+    private fun startMetronome() {
+        if (isMetronomePlaying) return
+
+        isMetronomePlaying = true
+        updateMetronomeUi()
+        metronomeTickRunnable.run()
+    }
+
+    private fun stopMetronome() {
+        isMetronomePlaying = false
+        mainHandler.removeCallbacks(metronomeTickRunnable)
+        metronomeTone.stopTone()
+        updateMetronomeUi()
+    }
+
+    private fun setBpm(bpm: Int) {
+        currentBpm = bpm.coerceToValidBpm()
+        noteBand.setBeatsPerMinute(currentBpm)
+        updateMetronomeUi()
+    }
+
+    private fun changeBpm(delta: Int) {
+        setBpm(currentBpm + delta)
+    }
+
+    private fun handleBpmHold(event: MotionEvent, delta: Int): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                startBpmHold(delta)
+                return false
+            }
+
+            MotionEvent.ACTION_UP,
+            MotionEvent.ACTION_CANCEL -> {
+                stopBpmHold()
+                return false
+            }
+        }
+
+        return false
+    }
+
+    private fun startBpmHold(delta: Int) {
+        stopBpmHold()
+        var repeatCount = 0
+        val runnable = object : Runnable {
+            override fun run() {
+                changeBpm(delta)
+                repeatCount++
+                mainHandler.postDelayed(this, bpmHoldDelay(repeatCount))
+            }
+        }
+        bpmHoldRunnable = runnable
+        mainHandler.postDelayed(runnable, INITIAL_BPM_HOLD_DELAY_MS)
+    }
+
+    private fun stopBpmHold() {
+        bpmHoldRunnable?.let(mainHandler::removeCallbacks)
+        bpmHoldRunnable = null
+    }
+
+    private fun bpmHoldDelay(repeatCount: Int): Long = when {
+        repeatCount < 4 -> 180L
+        repeatCount < 10 -> 100L
+        else -> 55L
+    }
+
+    private fun updateMetronomeUi() {
+        if (::bpmValueText.isInitialized) {
+            bpmValueText.text = "$currentBpm BPM"
+            decreaseBpmButton.isEnabled = currentBpm > MIN_BEATS_PER_MINUTE
+            increaseBpmButton.isEnabled = currentBpm < MAX_BEATS_PER_MINUTE
+            metronomeStartStopButton.text = if (isMetronomePlaying) "Stop" else "Start"
+        }
+
+        if (::metronomeSpeedText.isInitialized) {
+            metronomeSpeedText.text = "Metronome: $currentBpm BPM"
         }
     }
 
@@ -542,10 +721,34 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         dispatcher?.stop()
         stopUsbPianoInput()
+        stopBpmHold()
+        stopMetronome()
+        metronomeTone.release()
         super.onDestroy()
     }
 
+    override fun onPause() {
+        super.onPause()
+        if (
+            ::keepMetronomeInBackgroundCheckBox.isInitialized &&
+            !keepMetronomeInBackgroundCheckBox.isChecked
+        ) {
+            stopMetronome()
+        }
+    }
+
+    private fun Int.coerceToValidBpm(): Int {
+        val roundedToStep = ((this + BPM_STEP / 2) / BPM_STEP) * BPM_STEP
+        return roundedToStep.coerceIn(MIN_BEATS_PER_MINUTE, MAX_BEATS_PER_MINUTE)
+    }
+
     companion object {
+        private const val DEFAULT_BEATS_PER_MINUTE = 60
+        private const val MIN_BEATS_PER_MINUTE = 20
+        private const val MAX_BEATS_PER_MINUTE = 150
+        private const val BPM_STEP = 5
+        private const val INITIAL_BPM_HOLD_DELAY_MS = 350L
+        private const val METRONOME_TICK_MS = 70
         private const val MIN_VOICE_RMS = 0.015
         private const val MIN_PITCH_PROBABILITY = 0.75f
         private const val DEFAULT_NOTE_SPACING_BEATS = 1.4f

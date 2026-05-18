@@ -1,5 +1,8 @@
 {
   "title": "Steps and Skips",
+  "metronome": {
+    "beatsPerMinute": 80
+  },
   "notes": [
     "C4",
     "D4",

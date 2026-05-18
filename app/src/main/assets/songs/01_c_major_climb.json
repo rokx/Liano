@@ -1,5 +1,8 @@
 {
   "title": "C Major Climb",
+  "metronome": {
+    "beatsPerMinute": 60
+  },
   "notes": [
     "C4",
     "D4",
