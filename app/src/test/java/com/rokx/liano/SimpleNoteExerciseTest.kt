@@ -26,4 +26,20 @@ class SimpleNoteExerciseTest {
         assertTrue(exercise.isFinished())
         assertEquals(null, exercise.currentNote())
     }
+
+    @Test
+    fun `simultaneous notes complete one chord step`() {
+        val exercise = SimpleNoteExercise.fromSteps(listOf(setOf("C3", "E4")))
+
+        assertFalse(exercise.onNoteDetected("C3", 1_000L))
+        assertTrue(exercise.onNoteDetected("E4", 1_250L))
+    }
+
+    @Test
+    fun `chord notes must arrive within chord window`() {
+        val exercise = SimpleNoteExercise.fromSteps(listOf(setOf("C3", "E4")))
+
+        assertFalse(exercise.onNoteDetected("C3", 1_000L))
+        assertFalse(exercise.onNoteDetected("E4", 2_500L))
+    }
 }
