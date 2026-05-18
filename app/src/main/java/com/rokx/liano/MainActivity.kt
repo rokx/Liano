@@ -30,6 +30,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import be.tarsos.dsp.AudioDispatcher
 import be.tarsos.dsp.io.android.AudioDispatcherFactory
 import be.tarsos.dsp.pitch.PitchProcessor
+import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.log2
 import kotlin.math.max
@@ -324,22 +325,62 @@ class MainActivity : AppCompatActivity() {
         return songFiles.map { fileName ->
             assets.open("songs/$fileName").bufferedReader().use { reader ->
                 val json = JSONObject(reader.readText())
-                val notesJson = json.getJSONArray("notes")
-                val notes = List(notesJson.length()) { index -> notesJson.getString(index) }
-
-                SheetSong(
-                    title = json.getString("title"),
-                    notes = notes,
-                    metronomeSettings = MetronomeSettings(
-                        beatsPerMinute = json.optJSONObject("metronome")
-                            ?.optInt("beatsPerMinute", DEFAULT_BEATS_PER_MINUTE)
-                            ?.coerceToValidBpm()
-                            ?: DEFAULT_BEATS_PER_MINUTE
-                    )
-                )
+                parseSheetSong(json)
             }
         }
     }
+
+    private fun parseSheetSong(json: JSONObject): SheetSong {
+        val title = json.getString("title")
+        if (json.has("timedNotes")) {
+            return parseTimedSheetSong(title, json)
+        }
+
+        val notesJson = json.getJSONArray("notes")
+        val notes = List(notesJson.length()) { index -> notesJson.getString(index) }
+        return SheetSong(
+            title = title,
+            notes = notes,
+            metronomeSettings = parseMetronomeSettings(json)
+        )
+    }
+
+    private fun parseTimedSheetSong(title: String, json: JSONObject): SheetSong {
+        val notesJson = json.getJSONArray("timedNotes")
+        val timedNotes = List(notesJson.length()) { index ->
+            val noteJson = notesJson.getJSONObject(index)
+            TimedJsonNote(
+                name = noteJson.getString("name"),
+                startBeat = noteJson.getDouble("startBeat").toFloat(),
+                lengthBeats = noteJson.optDouble("lengthBeats", DEFAULT_NOTE_LENGTH_BEATS.toDouble()).toFloat()
+            )
+        }.sortedWith(compareBy<TimedJsonNote> { it.startBeat }.thenBy { midiNoteNumberForName(it.name) ?: Int.MAX_VALUE })
+
+        val lanes = timedNotes.map { it.name }.distinct()
+        val visualNotes = timedNotes.map { note ->
+            NoteBandView.SongNote(
+                name = note.name,
+                startBeat = note.startBeat,
+                lengthBeats = note.lengthBeats,
+                lane = lanes.indexOf(note.name)
+            )
+        }
+
+        return SheetSong(
+            title = title,
+            notes = timedNotes.map { it.name },
+            metronomeSettings = parseMetronomeSettings(json),
+            visualNotes = visualNotes
+        )
+    }
+
+    private fun parseMetronomeSettings(json: JSONObject): MetronomeSettings =
+        MetronomeSettings(
+            beatsPerMinute = json.optJSONObject("metronome")
+                ?.optInt("beatsPerMinute", DEFAULT_BEATS_PER_MINUTE)
+                ?.coerceToValidBpm()
+                ?: DEFAULT_BEATS_PER_MINUTE
+        )
 
     private fun openSong(song: SheetSong) {
         currentSong = song
@@ -355,11 +396,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun showSongWithCurrentHandSelection(restartPlayback: Boolean) {
         val song = currentSong ?: return
-        val visibleNotes = notesForSelection(song)
         val visibleVisualNotes = visualNotesForSelection(song)
+        val visibleSteps = stepsForVisualNotes(visibleVisualNotes)
 
-        exercise = SimpleNoteExercise(visibleNotes)
-        taskText.text = "Play: ${visibleNotes.joinToString(" ") { it.replace("4", "") }}"
+        exercise = SimpleNoteExercise.fromSteps(visibleSteps)
+        taskText.text = "Play: ${displaySteps(visibleSteps)}"
         metronomeSpeedText.text = "Metronome: $currentBpm BPM"
         noteBand.setSongNotes(
             visibleVisualNotes,
@@ -408,9 +449,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun notesForSelection(song: SheetSong): List<String> =
-        song.visualNotesForCurrentSelection().map { it.name }
-
     private fun visualNotesForSelection(song: SheetSong): List<NoteBandView.SongNote> =
         song.visualNotesForCurrentSelection()
 
@@ -425,6 +463,23 @@ class MainActivity : AppCompatActivity() {
         val noteNumber = midiNoteNumberForName(noteName) ?: return HandSelection.RIGHT
         return if (noteNumber < MIDDLE_C_MIDI_NOTE) HandSelection.LEFT else HandSelection.RIGHT
     }
+
+    private fun stepsForVisualNotes(notes: List<NoteBandView.SongNote>): List<Set<String>> =
+        notes
+            .groupBy { it.startBeat }
+            .toSortedMap()
+            .values
+            .map { notesAtBeat ->
+                notesAtBeat
+                    .sortedBy { midiNoteNumberForName(it.name) ?: Int.MAX_VALUE }
+                    .map { it.name }
+                    .toSet()
+            }
+
+    private fun displaySteps(steps: List<Set<String>>): String =
+        steps.joinToString(" ") { step ->
+            step.joinToString("+") { noteName -> noteName.replace(NOTE_OCTAVE_SUFFIX_PATTERN, "") }
+        }
 
     private fun importMidiSong(uri: Uri) {
         val song = runCatching {
@@ -997,6 +1052,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        private data class TimedJsonNote(
+            val name: String,
+            val startBeat: Float,
+            val lengthBeats: Float
+        )
+
         private const val DEFAULT_BEATS_PER_MINUTE = 60
         private const val MIN_BEATS_PER_MINUTE = 20
         private const val MAX_BEATS_PER_MINUTE = 150
@@ -1017,6 +1078,7 @@ class MainActivity : AppCompatActivity() {
         private const val NOTE_HINT_DELAY_MS = 5_000L
         private const val MIDDLE_C_MIDI_NOTE = 60
         private val NOTE_NAME_PATTERN = Regex("^([A-G]#?)(-?\\d+)$")
+        private val NOTE_OCTAVE_SUFFIX_PATTERN = Regex("-?\\d+$")
         private val NOTE_NAME_TO_OFFSET = mapOf(
             "C" to 0,
             "C#" to 1,

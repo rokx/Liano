@@ -1,0 +1,45 @@
+{
+  "title": "Two Hand Echo",
+  "timedNotes": [
+    {
+      "name": "C3",
+      "startBeat": 0.0,
+      "lengthBeats": 1.0
+    },
+    {
+      "name": "E4",
+      "startBeat": 0.0,
+      "lengthBeats": 1.0
+    },
+    {
+      "name": "G3",
+      "startBeat": 1.6,
+      "lengthBeats": 1.0
+    },
+    {
+      "name": "D4",
+      "startBeat": 1.6,
+      "lengthBeats": 1.0
+    },
+    {
+      "name": "F3",
+      "startBeat": 3.2,
+      "lengthBeats": 1.0
+    },
+    {
+      "name": "C4",
+      "startBeat": 3.2,
+      "lengthBeats": 1.0
+    },
+    {
+      "name": "C3",
+      "startBeat": 4.8,
+      "lengthBeats": 1.2
+    },
+    {
+      "name": "G4",
+      "startBeat": 4.8,
+      "lengthBeats": 1.2
+    }
+  ]
+}
