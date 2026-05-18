@@ -97,6 +97,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var greatWorkText: TextView
     private lateinit var taskText: TextView
     private lateinit var metronomeSpeedText: TextView
+    private lateinit var sheetMetronomeSoundButton: Button
+    private lateinit var sheetDecreaseBpmButton: Button
+    private lateinit var sheetIncreaseBpmButton: Button
+    private lateinit var sheetBpmValueText: TextView
     private lateinit var noteBand: NoteBandView
     private lateinit var playContainer: View
     private lateinit var sheetSelectionContainer: View
@@ -125,6 +129,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var practiceHintKeyboardView: PianoKeyboardView
     private lateinit var pressedNotesText: TextView
     private var handSelection = HandSelection.BOTH
+    private var isSheetMetronomeSoundEnabled = false
 
     private val midiPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(::importMidiSong)
@@ -140,6 +145,10 @@ class MainActivity : AppCompatActivity() {
         greatWorkText = findViewById(R.id.greatWorkText)
         taskText = findViewById(R.id.taskText)
         metronomeSpeedText = findViewById(R.id.metronomeSpeedText)
+        sheetMetronomeSoundButton = findViewById(R.id.sheetMetronomeSoundButton)
+        sheetDecreaseBpmButton = findViewById(R.id.sheetDecreaseBpmButton)
+        sheetIncreaseBpmButton = findViewById(R.id.sheetIncreaseBpmButton)
+        sheetBpmValueText = findViewById(R.id.sheetBpmValueText)
         noteBand = findViewById(R.id.noteBand)
         playContainer = findViewById(R.id.playContainer)
         sheetSelectionContainer = findViewById(R.id.sheetSelectionContainer)
@@ -189,6 +198,21 @@ class MainActivity : AppCompatActivity() {
         noteGateModeButton.setOnClickListener {
             toggleSheetPlaybackMode()
         }
+        sheetMetronomeSoundButton.setOnClickListener {
+            toggleSheetMetronomeSound()
+        }
+        sheetDecreaseBpmButton.setOnClickListener {
+            changeBpm(-BPM_STEP)
+        }
+        sheetIncreaseBpmButton.setOnClickListener {
+            changeBpm(BPM_STEP)
+        }
+        sheetDecreaseBpmButton.setOnTouchListener { _, event ->
+            handleBpmHold(event, -BPM_STEP)
+        }
+        sheetIncreaseBpmButton.setOnTouchListener { _, event ->
+            handleBpmHold(event, BPM_STEP)
+        }
         testInputModeButton.setOnClickListener {
             toggleInputMode()
         }
@@ -220,6 +244,7 @@ class MainActivity : AppCompatActivity() {
             showSheetSelection()
         }
         noteBand.onPlaybackFinished = {
+            stopSheetMetronomeSound()
             pausePlaybackButton.text = "Finished"
             pausePlaybackButton.isEnabled = false
         }
@@ -239,6 +264,7 @@ class MainActivity : AppCompatActivity() {
         })
         setupSheetButtons()
         updateMetronomeUi()
+        updateSheetMetronomeSoundButton()
         updateInputModeButtons()
         updateSheetPlaybackModeButton()
         startSelectedInput()
@@ -318,6 +344,8 @@ class MainActivity : AppCompatActivity() {
     private fun openSong(song: SheetSong) {
         currentSong = song
         handSelection = defaultHandSelection(song)
+        isSheetMetronomeSoundEnabled = false
+        updateSheetMetronomeSoundButton()
         setBpm(song.metronomeSettings.beatsPerMinute)
         showSongWithCurrentHandSelection(restartPlayback = true)
 
@@ -458,6 +486,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showSheetSelection() {
         noteBand.pausePlayback()
+        stopSheetMetronomeSound()
         hidePracticeHint()
         playContainer.visibility = View.GONE
         pianoTestContainer.visibility = View.GONE
@@ -467,6 +496,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showPianoTest() {
         noteBand.pausePlayback()
+        stopSheetMetronomeSound()
         hidePracticeHint()
         sheetSelectionContainer.visibility = View.GONE
         playContainer.visibility = View.GONE
@@ -477,6 +507,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showMetronomeSettings() {
         noteBand.pausePlayback()
+        stopSheetMetronomeSound()
         sheetSelectionContainer.visibility = View.GONE
         playContainer.visibility = View.GONE
         pianoTestContainer.visibility = View.GONE
@@ -487,6 +518,7 @@ class MainActivity : AppCompatActivity() {
     private fun toggleSheetPlayback() {
         if (sheetPlaybackMode == SheetPlaybackMode.WAIT_FOR_NOTE) {
             startWaitForNotePlayback()
+            startSheetMetronomeSoundIfNeeded()
             return
         }
 
@@ -499,9 +531,11 @@ class MainActivity : AppCompatActivity() {
         if (noteBand.isPlaybackPaused()) {
             noteBand.resumePlayback()
             pausePlaybackButton.text = "Pause"
+            startSheetMetronomeSoundIfNeeded()
         } else {
             noteBand.pausePlayback()
             pausePlaybackButton.text = "Resume"
+            stopSheetMetronomeSound()
         }
     }
 
@@ -535,6 +569,38 @@ class MainActivity : AppCompatActivity() {
         mainHandler.removeCallbacks(metronomeTickRunnable)
         metronomeTone.stopTone()
         updateMetronomeUi()
+    }
+
+    private fun toggleSheetMetronomeSound() {
+        if (isSheetMetronomeSoundEnabled) {
+            stopSheetMetronomeSound()
+            isSheetMetronomeSoundEnabled = false
+        } else {
+            isSheetMetronomeSoundEnabled = true
+            startSheetMetronomeSoundIfNeeded()
+        }
+        updateSheetMetronomeSoundButton()
+    }
+
+    private fun startSheetMetronomeSoundIfNeeded() {
+        if (!isSheetMetronomeSoundEnabled || playContainer.visibility != View.VISIBLE) return
+        if (sheetPlaybackMode == SheetPlaybackMode.FLOW && noteBand.isPlaybackPaused()) return
+        startMetronome()
+    }
+
+    private fun stopSheetMetronomeSound() {
+        if (isSheetMetronomeSoundEnabled) {
+            stopMetronome()
+        }
+    }
+
+    private fun updateSheetMetronomeSoundButton() {
+        if (!::sheetMetronomeSoundButton.isInitialized) return
+        sheetMetronomeSoundButton.text = if (isSheetMetronomeSoundEnabled) {
+            "Sound: On"
+        } else {
+            "Sound: Off"
+        }
     }
 
     private fun setBpm(bpm: Int) {
@@ -599,6 +665,12 @@ class MainActivity : AppCompatActivity() {
 
         if (::metronomeSpeedText.isInitialized) {
             metronomeSpeedText.text = "Metronome: $currentBpm BPM"
+        }
+
+        if (::sheetBpmValueText.isInitialized) {
+            sheetBpmValueText.text = "$currentBpm BPM"
+            sheetDecreaseBpmButton.isEnabled = currentBpm > MIN_BEATS_PER_MINUTE
+            sheetIncreaseBpmButton.isEnabled = currentBpm < MAX_BEATS_PER_MINUTE
         }
     }
 

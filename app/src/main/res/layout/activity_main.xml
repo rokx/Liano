@@ -172,7 +172,48 @@
             android:id="@+id/noteBand"
             android:layout_width="match_parent"
             android:layout_height="300dp"
-            android:layout_marginBottom="24dp" />
+            android:layout_marginBottom="12dp" />
+
+        <LinearLayout
+            android:id="@+id/sheetMetronomeControls"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/sheetMetronomeSoundButton"
+                android:layout_width="wrap_content"
+                android:layout_height="52dp"
+                android:minWidth="128dp"
+                android:text="Sound: Off"
+                android:textSize="15sp" />
+
+            <Button
+                android:id="@+id/sheetDecreaseBpmButton"
+                android:layout_width="58dp"
+                android:layout_height="52dp"
+                android:layout_marginStart="12dp"
+                android:text="-"
+                android:textSize="24sp" />
+
+            <TextView
+                android:id="@+id/sheetBpmValueText"
+                android:layout_width="112dp"
+                android:layout_height="52dp"
+                android:gravity="center"
+                android:text="60 BPM"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/sheetIncreaseBpmButton"
+                android:layout_width="58dp"
+                android:layout_height="52dp"
+                android:text="+"
+                android:textSize="24sp" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/taskText"
