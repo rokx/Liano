@@ -314,11 +314,24 @@
                 android:textStyle="bold" />
         </LinearLayout>
 
+        <CheckBox
+            android:id="@+id/keepMetronomeInBackgroundCheckBox"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:buttonTint="@android:color/white"
+            android:minHeight="48dp"
+            android:padding="8dp"
+            android:text="Background playback"
+            android:textColor="@android:color/white"
+            android:textSize="19sp"
+            android:textStyle="bold" />
+
         <TextView
             android:id="@+id/bpmValueText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="72dp"
+            android:layout_marginTop="24dp"
             android:text="60 BPM"
             android:textColor="@android:color/white"
             android:textSize="42sp"
@@ -355,24 +368,11 @@
             android:id="@+id/metronomeStartStopButton"
             android:layout_width="220dp"
             android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
+            android:layout_marginTop="20dp"
             android:background="@drawable/bg_song_button"
             android:minHeight="54dp"
             android:text="Start"
             android:textColor="@android:color/black"
             android:textSize="18sp" />
-
-        <CheckBox
-            android:id="@+id/keepMetronomeInBackgroundCheckBox"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:buttonTint="@android:color/white"
-            android:minHeight="48dp"
-            android:padding="8dp"
-            android:text="Background playback"
-            android:textColor="@android:color/white"
-            android:textSize="19sp"
-            android:textStyle="bold" />
     </LinearLayout>
 </FrameLayout>
