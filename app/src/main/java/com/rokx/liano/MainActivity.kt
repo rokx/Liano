@@ -55,6 +55,12 @@ class MainActivity : AppCompatActivity() {
         }
     )
 
+    private enum class HandSelection(val label: String) {
+        BOTH("Both hands"),
+        LEFT("Left hand"),
+        RIGHT("Right hand")
+    }
+
     private val RECORD_AUDIO_PERMISSION = Manifest.permission.RECORD_AUDIO
     private val REQUEST_MIC = 100
 
@@ -63,11 +69,22 @@ class MainActivity : AppCompatActivity() {
         USB_PIANO
     }
 
+    private enum class SheetPlaybackMode {
+        FLOW,
+        WAIT_FOR_NOTE
+    }
+
     private lateinit var exercise: SimpleNoteExercise
     private var dispatcher: AudioDispatcher? = null
     private var usbMidiInput: UsbMidiPianoInput? = null
     private var inputMode = InputMode.MICROPHONE
+    private var sheetPlaybackMode = SheetPlaybackMode.FLOW
     private val pressedMidiNotes = mutableSetOf<Int>()
+    private var currentSong: SheetSong? = null
+    private var hintTargetNote: String? = null
+    private val showHintRunnable = Runnable {
+        showPracticeHintIfStillWaiting()
+    }
 
     private lateinit var pitchText: TextView
 
@@ -86,9 +103,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sheetButtonContainer: LinearLayout
     private lateinit var backToMenuButton: Button
     private lateinit var pausePlaybackButton: Button
+    private lateinit var handSelectionButton: Button
     private lateinit var uploadMidiButton: Button
     private lateinit var inputModeButton: Button
     private lateinit var playInputModeButton: Button
+    private lateinit var noteGateModeButton: Button
     private lateinit var pianoTestButton: Button
     private lateinit var openMetronomeButton: Button
     private lateinit var metronomeContainer: View
@@ -103,7 +122,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var testInputModeButton: Button
     private lateinit var pianoTestStatusText: TextView
     private lateinit var pianoKeyboardView: PianoKeyboardView
+    private lateinit var practiceHintKeyboardView: PianoKeyboardView
     private lateinit var pressedNotesText: TextView
+    private var handSelection = HandSelection.BOTH
 
     private val midiPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(::importMidiSong)
@@ -125,9 +146,11 @@ class MainActivity : AppCompatActivity() {
         sheetButtonContainer = findViewById(R.id.sheetButtonContainer)
         backToMenuButton = findViewById(R.id.backToMenuButton)
         pausePlaybackButton = findViewById(R.id.pausePlaybackButton)
+        handSelectionButton = findViewById(R.id.handSelectionButton)
         uploadMidiButton = findViewById(R.id.uploadMidiButton)
         inputModeButton = findViewById(R.id.inputModeButton)
         playInputModeButton = findViewById(R.id.playInputModeButton)
+        noteGateModeButton = findViewById(R.id.noteGateModeButton)
         pianoTestButton = findViewById(R.id.pianoTestButton)
         openMetronomeButton = findViewById(R.id.openMetronomeButton)
         metronomeContainer = findViewById(R.id.metronomeContainer)
@@ -142,6 +165,7 @@ class MainActivity : AppCompatActivity() {
         testInputModeButton = findViewById(R.id.testInputModeButton)
         pianoTestStatusText = findViewById(R.id.pianoTestStatusText)
         pianoKeyboardView = findViewById(R.id.pianoKeyboardView)
+        practiceHintKeyboardView = findViewById(R.id.practiceHintKeyboardView)
         pressedNotesText = findViewById(R.id.pressedNotesText)
 
         backToMenuButton.setOnClickListener {
@@ -149,6 +173,9 @@ class MainActivity : AppCompatActivity() {
         }
         pausePlaybackButton.setOnClickListener {
             toggleSheetPlayback()
+        }
+        handSelectionButton.setOnClickListener {
+            cycleHandSelection()
         }
         uploadMidiButton.setOnClickListener {
             midiPicker.launch(arrayOf(MIDI_MIME_TYPE, LEGACY_MIDI_MIME_TYPE, OCTET_STREAM_MIME_TYPE, ANY_FILE_MIME_TYPE))
@@ -158,6 +185,9 @@ class MainActivity : AppCompatActivity() {
         }
         playInputModeButton.setOnClickListener {
             toggleInputMode()
+        }
+        noteGateModeButton.setOnClickListener {
+            toggleSheetPlaybackMode()
         }
         testInputModeButton.setOnClickListener {
             toggleInputMode()
@@ -210,6 +240,7 @@ class MainActivity : AppCompatActivity() {
         setupSheetButtons()
         updateMetronomeUi()
         updateInputModeButtons()
+        updateSheetPlaybackModeButton()
         startSelectedInput()
     }
 
@@ -285,19 +316,86 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openSong(song: SheetSong) {
-        exercise = SimpleNoteExercise(song.notes)
+        currentSong = song
+        handSelection = defaultHandSelection(song)
         setBpm(song.metronomeSettings.beatsPerMinute)
-
-        taskText.text = "Play: ${song.notes.joinToString(" ") { it.replace("4", "") }}"
-        metronomeSpeedText.text = "Metronome: $currentBpm BPM"
-
-        noteBand.setBeatsPerMinute(currentBpm)
-        noteBand.setSongNotes(song.visualNotes)
-        pausePlaybackButton.text = "Pause"
-        pausePlaybackButton.isEnabled = true
+        showSongWithCurrentHandSelection(restartPlayback = true)
 
         sheetSelectionContainer.visibility = View.GONE
         playContainer.visibility = View.VISIBLE
+    }
+
+    private fun showSongWithCurrentHandSelection(restartPlayback: Boolean) {
+        val song = currentSong ?: return
+        val visibleNotes = notesForSelection(song)
+        val visibleVisualNotes = visualNotesForSelection(song)
+
+        exercise = SimpleNoteExercise(visibleNotes)
+        taskText.text = "Play: ${visibleNotes.joinToString(" ") { it.replace("4", "") }}"
+        metronomeSpeedText.text = "Metronome: $currentBpm BPM"
+        noteBand.setSongNotes(
+            visibleVisualNotes,
+            restartPlayback = restartPlayback && sheetPlaybackMode == SheetPlaybackMode.FLOW
+        )
+        updateHandSelectionButton(song)
+        pausePlaybackButton.text = "Pause"
+        pausePlaybackButton.isEnabled = true
+        hidePracticeHint()
+        if (restartPlayback && sheetPlaybackMode == SheetPlaybackMode.WAIT_FOR_NOTE) {
+            startWaitForNotePlayback()
+        }
+    }
+
+    private fun cycleHandSelection() {
+        val song = currentSong ?: return
+        val availableSelections = availableHandSelections(song)
+        val currentIndex = availableSelections.indexOf(handSelection).takeIf { it >= 0 } ?: 0
+        handSelection = availableSelections[(currentIndex + 1) % availableSelections.size]
+        showSongWithCurrentHandSelection(restartPlayback = true)
+    }
+
+    private fun updateHandSelectionButton(song: SheetSong) {
+        val availableSelections = availableHandSelections(song)
+        handSelectionButton.visibility = if (availableSelections.size > 1) View.VISIBLE else View.GONE
+        handSelectionButton.text = "Play: ${handSelection.label}"
+    }
+
+    private fun defaultHandSelection(song: SheetSong): HandSelection {
+        val hands = song.visualNotes.map { handForNoteName(it.name) }.toSet()
+        return when {
+            hands == setOf(HandSelection.LEFT) -> HandSelection.LEFT
+            hands == setOf(HandSelection.RIGHT) -> HandSelection.RIGHT
+            else -> HandSelection.BOTH
+        }
+    }
+
+    private fun availableHandSelections(song: SheetSong): List<HandSelection> {
+        val hasLeft = song.visualNotes.any { handForNoteName(it.name) == HandSelection.LEFT }
+        val hasRight = song.visualNotes.any { handForNoteName(it.name) == HandSelection.RIGHT }
+        return when {
+            hasLeft && hasRight -> listOf(HandSelection.BOTH, HandSelection.LEFT, HandSelection.RIGHT)
+            hasLeft -> listOf(HandSelection.LEFT)
+            hasRight -> listOf(HandSelection.RIGHT)
+            else -> listOf(HandSelection.BOTH)
+        }
+    }
+
+    private fun notesForSelection(song: SheetSong): List<String> =
+        song.visualNotesForCurrentSelection().map { it.name }
+
+    private fun visualNotesForSelection(song: SheetSong): List<NoteBandView.SongNote> =
+        song.visualNotesForCurrentSelection()
+
+    private fun SheetSong.visualNotesForCurrentSelection(): List<NoteBandView.SongNote> =
+        when (handSelection) {
+            HandSelection.BOTH -> visualNotes
+            HandSelection.LEFT -> visualNotes.filter { handForNoteName(it.name) == HandSelection.LEFT }
+            HandSelection.RIGHT -> visualNotes.filter { handForNoteName(it.name) == HandSelection.RIGHT }
+        }
+
+    private fun handForNoteName(noteName: String): HandSelection {
+        val noteNumber = midiNoteNumberForName(noteName) ?: return HandSelection.RIGHT
+        return if (noteNumber < MIDDLE_C_MIDI_NOTE) HandSelection.LEFT else HandSelection.RIGHT
     }
 
     private fun importMidiSong(uri: Uri) {
@@ -360,6 +458,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showSheetSelection() {
         noteBand.pausePlayback()
+        hidePracticeHint()
         playContainer.visibility = View.GONE
         pianoTestContainer.visibility = View.GONE
         metronomeContainer.visibility = View.GONE
@@ -368,6 +467,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showPianoTest() {
         noteBand.pausePlayback()
+        hidePracticeHint()
         sheetSelectionContainer.visibility = View.GONE
         playContainer.visibility = View.GONE
         metronomeContainer.visibility = View.GONE
@@ -385,6 +485,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun toggleSheetPlayback() {
+        if (sheetPlaybackMode == SheetPlaybackMode.WAIT_FOR_NOTE) {
+            startWaitForNotePlayback()
+            return
+        }
+
         if (noteBand.hasPlaybackFinished()) {
             pausePlaybackButton.text = "Finished"
             pausePlaybackButton.isEnabled = false
@@ -494,6 +599,48 @@ class MainActivity : AppCompatActivity() {
 
         if (::metronomeSpeedText.isInitialized) {
             metronomeSpeedText.text = "Metronome: $currentBpm BPM"
+        }
+    }
+
+    private fun toggleSheetPlaybackMode() {
+        sheetPlaybackMode = when (sheetPlaybackMode) {
+            SheetPlaybackMode.FLOW -> SheetPlaybackMode.WAIT_FOR_NOTE
+            SheetPlaybackMode.WAIT_FOR_NOTE -> SheetPlaybackMode.FLOW
+        }
+        updateSheetPlaybackModeButton()
+
+        if (currentSong == null) return
+        hidePracticeHint()
+        showSongWithCurrentHandSelection(restartPlayback = true)
+    }
+
+    private fun updateSheetPlaybackModeButton() {
+        noteGateModeButton.text = when (sheetPlaybackMode) {
+            SheetPlaybackMode.FLOW -> "Mode: Flow"
+            SheetPlaybackMode.WAIT_FOR_NOTE -> "Mode: Wait"
+        }
+    }
+
+    private fun startWaitForNotePlayback() {
+        if (!::exercise.isInitialized) return
+        if (exercise.isFinished()) {
+            finishWaitForNotePlayback()
+            return
+        }
+
+        hidePracticeHint()
+        pausePlaybackButton.text = "Waiting"
+        pausePlaybackButton.isEnabled = true
+        noteBand.scrollToNote(exercise.currentIndex()) {
+            schedulePracticeHint()
+        }
+    }
+
+    private fun finishWaitForNotePlayback() {
+        hidePracticeHint()
+        noteBand.scrollToNote(Int.MAX_VALUE) {
+            pausePlaybackButton.text = "Finished"
+            pausePlaybackButton.isEnabled = false
         }
     }
 
@@ -658,10 +805,20 @@ class MainActivity : AppCompatActivity() {
     private fun handleDetectedNote(noteName: String) {
         noteBand.setDetectedNote(noteName)
 
-        if (playContainer.visibility == View.VISIBLE &&
-            ::exercise.isInitialized &&
-            exercise.onNoteDetected(noteName, SystemClock.elapsedRealtime())
-        ) {
+        if (playContainer.visibility != View.VISIBLE || !::exercise.isInitialized) return
+
+        val nowMs = SystemClock.elapsedRealtime()
+        if (sheetPlaybackMode == SheetPlaybackMode.WAIT_FOR_NOTE) {
+            if (exercise.matchesCurrentNote(noteName, nowMs)) {
+                showGreatWork()
+                hidePracticeHint()
+                if (exercise.isFinished()) {
+                    finishWaitForNotePlayback()
+                } else {
+                    startWaitForNotePlayback()
+                }
+            }
+        } else if (exercise.onNoteDetected(noteName, nowMs)) {
             showGreatWork()
         }
     }
@@ -674,11 +831,36 @@ class MainActivity : AppCompatActivity() {
 
     private fun updatePressedNotes() {
         pianoKeyboardView.setPressedNotes(pressedMidiNotes)
+        practiceHintKeyboardView.setPressedNotes(pressedMidiNotes)
         val pressedText = pressedMidiNotes
             .sorted()
             .joinToString(" ") { MidiNoteExtractor.noteName(it) }
             .ifBlank { "none" }
         pressedNotesText.text = "Pressed: $pressedText"
+    }
+
+    private fun schedulePracticeHint() {
+        hintTargetNote = exercise.currentNote()
+        practiceHintKeyboardView.removeCallbacks(showHintRunnable)
+        practiceHintKeyboardView.postDelayed(showHintRunnable, NOTE_HINT_DELAY_MS)
+    }
+
+    private fun showPracticeHintIfStillWaiting() {
+        val targetNote = hintTargetNote ?: return
+        if (playContainer.visibility != View.VISIBLE) return
+        if (sheetPlaybackMode != SheetPlaybackMode.WAIT_FOR_NOTE) return
+        if (targetNote != exercise.currentNote()) return
+
+        val targetNoteNumber = midiNoteNumberForName(targetNote) ?: return
+        practiceHintKeyboardView.setSuggestedNotes(setOf(targetNoteNumber))
+        practiceHintKeyboardView.visibility = View.VISIBLE
+    }
+
+    private fun hidePracticeHint() {
+        practiceHintKeyboardView.removeCallbacks(showHintRunnable)
+        hintTargetNote = null
+        practiceHintKeyboardView.clearSuggestedNotes()
+        practiceHintKeyboardView.visibility = View.GONE
     }
 
     private fun showGreatWork() {
@@ -760,6 +942,8 @@ class MainActivity : AppCompatActivity() {
         private const val OCTET_STREAM_MIME_TYPE = "application/octet-stream"
         private const val ANY_FILE_MIME_TYPE = "*/*"
         private const val NOTES_PER_OCTAVE = 12
+        private const val NOTE_HINT_DELAY_MS = 5_000L
+        private const val MIDDLE_C_MIDI_NOTE = 60
         private val NOTE_NAME_PATTERN = Regex("^([A-G]#?)(-?\\d+)$")
         private val NOTE_NAME_TO_OFFSET = mapOf(
             "C" to 0,

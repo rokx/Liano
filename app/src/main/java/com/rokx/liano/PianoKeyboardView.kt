@@ -31,6 +31,14 @@ class PianoKeyboardView @JvmOverloads constructor(
         color = Color.rgb(29, 119, 255)
         style = Paint.Style.FILL
     }
+    private val whiteSuggestedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(255, 216, 97)
+        style = Paint.Style.FILL
+    }
+    private val blackSuggestedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(255, 174, 57)
+        style = Paint.Style.FILL
+    }
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(70, 70, 76)
         style = Paint.Style.STROKE
@@ -43,6 +51,7 @@ class PianoKeyboardView @JvmOverloads constructor(
     }
 
     private val pressedNotes = mutableSetOf<Int>()
+    private val suggestedNotes = mutableSetOf<Int>()
 
     fun setPressedNotes(notes: Set<Int>) {
         pressedNotes.clear()
@@ -65,6 +74,17 @@ class PianoKeyboardView @JvmOverloads constructor(
         invalidate()
     }
 
+    fun setSuggestedNotes(notes: Set<Int>) {
+        suggestedNotes.clear()
+        suggestedNotes += notes
+        invalidate()
+    }
+
+    fun clearSuggestedNotes() {
+        suggestedNotes.clear()
+        invalidate()
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val whiteNotes = (FIRST_NOTE..LAST_NOTE).filterNot(::isBlackKey)
@@ -82,7 +102,12 @@ class PianoKeyboardView @JvmOverloads constructor(
             val left = paddingLeft + index * whiteKeyWidth
             val rect = RectF(left, top, left + whiteKeyWidth, bottom)
             whiteKeyRects[noteNumber] = rect
-            canvas.drawRect(rect, if (noteNumber in pressedNotes) whitePressedPaint else whitePaint)
+            val paint = when (noteNumber) {
+                in pressedNotes -> whitePressedPaint
+                in suggestedNotes -> whiteSuggestedPaint
+                else -> whitePaint
+            }
+            canvas.drawRect(rect, paint)
             canvas.drawRect(rect, strokePaint)
 
             if (noteNumber % NOTES_PER_OCTAVE == 0) {
@@ -107,7 +132,11 @@ class PianoKeyboardView @JvmOverloads constructor(
                 rect,
                 8f,
                 8f,
-                if (noteNumber in pressedNotes) blackPressedPaint else blackPaint
+                when (noteNumber) {
+                    in pressedNotes -> blackPressedPaint
+                    in suggestedNotes -> blackSuggestedPaint
+                    else -> blackPaint
+                }
             )
         }
     }

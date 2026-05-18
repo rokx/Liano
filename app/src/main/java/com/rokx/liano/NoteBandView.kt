@@ -29,6 +29,11 @@ class NoteBandView @JvmOverloads constructor(
         val lane: Int
     )
 
+    private enum class Staff {
+        TREBLE,
+        BASS
+    }
+
     private var songNotes = listOf(
         SongNote("C4", 0f, 1f, 0),
         SongNote("D4", 1.4f, 1f, 1)
@@ -77,6 +82,7 @@ class NoteBandView @JvmOverloads constructor(
     private var songEndBeat = songNotes.maxOf { it.startBeat + it.lengthBeats }
     private var beatsPerMinute = DEFAULT_BEATS_PER_MINUTE
     private var playbackWasCancelled = false
+    private var pendingScrollFinished: (() -> Unit)? = null
     private var lastDragX = 0f
     private var hasDragged = false
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
@@ -104,7 +110,10 @@ class NoteBandView @JvmOverloads constructor(
                     scrollBeat = songEndBeat
                     invalidate()
                     onPlaybackFinished?.invoke()
+                } else if (!playbackWasCancelled) {
+                    pendingScrollFinished?.invoke()
                 }
+                pendingScrollFinished = null
             }
         })
     }
@@ -119,7 +128,7 @@ class NoteBandView @JvmOverloads constructor(
         super.onDetachedFromWindow()
     }
 
-    fun setSongNotes(notes: List<SongNote>) {
+    fun setSongNotes(notes: List<SongNote>, restartPlayback: Boolean = true) {
         songNotes = notes
         inputMarks = emptyList()
         lastInputMarkBeat = Float.NEGATIVE_INFINITY
@@ -127,7 +136,9 @@ class NoteBandView @JvmOverloads constructor(
         songEndBeat = notes.maxOfOrNull { it.startBeat + it.lengthBeats } ?: 1f
         scrollBeat = 0f
         configurePlaybackAnimator()
-        animator.start()
+        if (restartPlayback) {
+            animator.start()
+        }
         invalidate()
     }
 
@@ -159,6 +170,19 @@ class NoteBandView @JvmOverloads constructor(
 
     fun hasPlaybackFinished(): Boolean = scrollBeat >= songEndBeat && !animator.isRunning
 
+    fun scrollToNote(index: Int, onFinished: (() -> Unit)? = null) {
+        val targetBeat = songNotes.getOrNull(index)?.startBeat ?: songEndBeat
+        animateScrollToBeat(targetBeat.coerceIn(0f, songEndBeat), onFinished)
+    }
+
+    fun jumpToNote(index: Int) {
+        val targetBeat = songNotes.getOrNull(index)?.startBeat ?: songEndBeat
+        animator.cancel()
+        scrollBeat = targetBeat.coerceIn(0f, songEndBeat)
+        configurePlaybackAnimator()
+        invalidate()
+    }
+
     fun setDetectedNote(noteName: String) {
         currentNoteName = noteName
         addInputMark(noteName)
@@ -188,6 +212,26 @@ class NoteBandView @JvmOverloads constructor(
         scrollBeat = (scrollBeat - deltaX / beatWidth).coerceIn(0f, songEndBeat)
         animator.currentPlayTime = (scrollBeat * msPerBeat()).roundToLong()
         invalidate()
+    }
+
+    private fun animateScrollToBeat(targetBeat: Float, onFinished: (() -> Unit)? = null) {
+        animator.cancel()
+        pendingScrollFinished = onFinished
+
+        val distance = abs(targetBeat - scrollBeat)
+        if (distance < MIN_SCROLL_DISTANCE_BEATS) {
+            scrollBeat = targetBeat
+            invalidate()
+            pendingScrollFinished?.invoke()
+            pendingScrollFinished = null
+            configurePlaybackAnimator()
+            return
+        }
+
+        animator.setFloatValues(scrollBeat, targetBeat)
+        animator.duration = max(MIN_SCROLL_ANIMATION_MS, (distance * msPerBeat()).roundToLong())
+        animator.repeatCount = 0
+        animator.start()
     }
 
     private fun currentBeatWidth(): Float {
@@ -251,22 +295,49 @@ class NoteBandView @JvmOverloads constructor(
         val staffLeft = paddingLeft + 86f
         val staffRight = width - paddingRight - 20f
         val lineSpacing = max(15f, contentHeight / 15f)
-        val trebleStaffTop = paddingTop + contentHeight * 0.08f
-        val bassStaffTop = trebleStaffTop + lineSpacing * 7.1f
+        val visibleStaves = visibleStaves()
+        val singleStaffTop = paddingTop + (contentHeight - lineSpacing * 4f) / 2f
+        val trebleStaffTop = if (visibleStaves == setOf(Staff.TREBLE)) {
+            singleStaffTop
+        } else {
+            paddingTop + contentHeight * 0.08f
+        }
+        val bassStaffTop = if (visibleStaves == setOf(Staff.BASS)) {
+            singleStaffTop
+        } else {
+            trebleStaffTop + lineSpacing * 7.1f
+        }
 
-        drawStaff(canvas, staffLeft, staffRight.toFloat(), trebleStaffTop, lineSpacing)
-        drawStaff(canvas, staffLeft, staffRight.toFloat(), bassStaffTop, lineSpacing)
-        drawClefs(canvas, paddingLeft + 18f, trebleStaffTop, bassStaffTop, lineSpacing)
+        if (Staff.TREBLE in visibleStaves) {
+            drawStaff(canvas, staffLeft, staffRight.toFloat(), trebleStaffTop, lineSpacing)
+        }
+        if (Staff.BASS in visibleStaves) {
+            drawStaff(canvas, staffLeft, staffRight.toFloat(), bassStaffTop, lineSpacing)
+        }
+        drawClefs(canvas, paddingLeft + 18f, trebleStaffTop, bassStaffTop, lineSpacing, visibleStaves)
+
+        val cursorTop = if (Staff.TREBLE in visibleStaves) {
+            trebleStaffTop - lineSpacing * 1.5f
+        } else {
+            bassStaffTop - lineSpacing * 1.5f
+        }
+        val cursorBottom = if (Staff.BASS in visibleStaves) {
+            bassStaffTop + lineSpacing * 4.75f
+        } else {
+            trebleStaffTop + lineSpacing * 4.75f
+        }
 
         canvas.drawLine(
             targetX,
-            trebleStaffTop - lineSpacing * 1.5f,
+            cursorTop,
             targetX,
-            bassStaffTop + lineSpacing * 4.75f,
+            cursorBottom,
             cursorPaint
         )
 
         inputMarks.forEach { mark ->
+            if (staffForNoteName(mark.noteName) !in visibleStaves) return@forEach
+
             val x = targetX + (mark.beat - scrollBeat) * beatWidth
             if (x < paddingLeft || x > width - paddingRight) return@forEach
 
@@ -302,12 +373,23 @@ class NoteBandView @JvmOverloads constructor(
         }
     }
 
-    private fun drawClefs(canvas: Canvas, x: Float, trebleStaffTop: Float, bassStaffTop: Float, spacing: Float) {
-        clefPaint.textSize = spacing * 3.9f
-        canvas.drawText(TREBLE_CLEF, x, trebleStaffTop + spacing * 3.45f, clefPaint)
+    private fun drawClefs(
+        canvas: Canvas,
+        x: Float,
+        trebleStaffTop: Float,
+        bassStaffTop: Float,
+        spacing: Float,
+        visibleStaves: Set<Staff>
+    ) {
+        if (Staff.TREBLE in visibleStaves) {
+            clefPaint.textSize = spacing * 3.9f
+            canvas.drawText(TREBLE_CLEF, x, trebleStaffTop + spacing * 3.45f, clefPaint)
+        }
 
-        clefPaint.textSize = spacing * 2.9f
-        canvas.drawText(BASS_CLEF, x + spacing * 0.2f, bassStaffTop + spacing * 3.15f, clefPaint)
+        if (Staff.BASS in visibleStaves) {
+            clefPaint.textSize = spacing * 2.9f
+            canvas.drawText(BASS_CLEF, x + spacing * 0.2f, bassStaffTop + spacing * 3.15f, clefPaint)
+        }
     }
 
     private fun noteY(noteName: String, trebleStaffTop: Float, bassStaffTop: Float, spacing: Float): Float {
@@ -322,9 +404,22 @@ class NoteBandView @JvmOverloads constructor(
         return staffTop + spacing * (c4Position - diatonicStepsFromC4 * STAFF_POSITION_PER_STEP)
     }
 
+    private fun visibleStaves(): Set<Staff> {
+        val staves = songNotes.mapTo(mutableSetOf()) { note -> staffForNoteName(note.name) }
+        return staves.ifEmpty { setOf(Staff.TREBLE) }
+    }
+
+    private fun staffForNoteName(noteName: String): Staff {
+        val parsedNote = NOTE_NAME_PATTERN.matchEntire(noteName) ?: return Staff.TREBLE
+        val octave = parsedNote.groupValues[2].toIntOrNull() ?: return Staff.TREBLE
+        return if (octave < 4) Staff.BASS else Staff.TREBLE
+    }
+
     companion object {
         private const val MAX_INPUT_MARKS = 260
         private const val MIN_INPUT_MARK_BEAT_SPACING = 0.06f
+        private const val MIN_SCROLL_DISTANCE_BEATS = 0.01f
+        private const val MIN_SCROLL_ANIMATION_MS = 220L
         private const val DEFAULT_BEATS_PER_MINUTE = 60
         private const val MIN_BEATS_PER_MINUTE = 20
         private const val MAX_BEATS_PER_MINUTE = 150
@@ -350,6 +445,7 @@ class NoteBandView @JvmOverloads constructor(
 
     private fun configurePlaybackAnimator() {
         animator.cancel()
+        pendingScrollFinished = null
         animator.setFloatValues(scrollBeat, songEndBeat)
         animator.duration = max(1L, ((songEndBeat - scrollBeat) * msPerBeat()).roundToLong())
         animator.repeatCount = 0
