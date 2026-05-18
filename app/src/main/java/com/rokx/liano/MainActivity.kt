@@ -52,11 +52,22 @@ class MainActivity : AppCompatActivity() {
         USB_PIANO
     }
 
+    private enum class SheetPlaybackMode {
+        FLOW,
+        WAIT_FOR_NOTE
+    }
+
     private lateinit var exercise: SimpleNoteExercise
     private var dispatcher: AudioDispatcher? = null
     private var usbMidiInput: UsbMidiPianoInput? = null
     private var inputMode = InputMode.MICROPHONE
+    private var sheetPlaybackMode = SheetPlaybackMode.FLOW
     private val pressedMidiNotes = mutableSetOf<Int>()
+    private var currentSong: SheetSong? = null
+    private var hintTargetNote: String? = null
+    private val showHintRunnable = Runnable {
+        showPracticeHintIfStillWaiting()
+    }
 
     private lateinit var pitchText: TextView
 
@@ -71,12 +82,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var uploadMidiButton: Button
     private lateinit var inputModeButton: Button
     private lateinit var playInputModeButton: Button
+    private lateinit var noteGateModeButton: Button
     private lateinit var pianoTestButton: Button
     private lateinit var pianoTestContainer: View
     private lateinit var backFromPianoTestButton: Button
     private lateinit var testInputModeButton: Button
     private lateinit var pianoTestStatusText: TextView
     private lateinit var pianoKeyboardView: PianoKeyboardView
+    private lateinit var practiceHintKeyboardView: PianoKeyboardView
     private lateinit var pressedNotesText: TextView
 
     private val midiPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -101,12 +114,14 @@ class MainActivity : AppCompatActivity() {
         uploadMidiButton = findViewById(R.id.uploadMidiButton)
         inputModeButton = findViewById(R.id.inputModeButton)
         playInputModeButton = findViewById(R.id.playInputModeButton)
+        noteGateModeButton = findViewById(R.id.noteGateModeButton)
         pianoTestButton = findViewById(R.id.pianoTestButton)
         pianoTestContainer = findViewById(R.id.pianoTestContainer)
         backFromPianoTestButton = findViewById(R.id.backFromPianoTestButton)
         testInputModeButton = findViewById(R.id.testInputModeButton)
         pianoTestStatusText = findViewById(R.id.pianoTestStatusText)
         pianoKeyboardView = findViewById(R.id.pianoKeyboardView)
+        practiceHintKeyboardView = findViewById(R.id.practiceHintKeyboardView)
         pressedNotesText = findViewById(R.id.pressedNotesText)
 
         backToMenuButton.setOnClickListener {
@@ -123,6 +138,9 @@ class MainActivity : AppCompatActivity() {
         }
         playInputModeButton.setOnClickListener {
             toggleInputMode()
+        }
+        noteGateModeButton.setOnClickListener {
+            toggleSheetPlaybackMode()
         }
         testInputModeButton.setOnClickListener {
             toggleInputMode()
@@ -149,6 +167,7 @@ class MainActivity : AppCompatActivity() {
         })
         setupSheetButtons()
         updateInputModeButtons()
+        updateSheetPlaybackModeButton()
         startSelectedInput()
     }
 
@@ -218,13 +237,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openSong(song: SheetSong) {
+        currentSong = song
         exercise = SimpleNoteExercise(song.notes)
 
         taskText.text = "Play: ${song.notes.joinToString(" ") { it.replace("4", "") }}"
 
-        noteBand.setSongNotes(song.visualNotes)
+        noteBand.setSongNotes(song.visualNotes, autoplay = sheetPlaybackMode == SheetPlaybackMode.FLOW)
         pausePlaybackButton.text = "Pause"
         pausePlaybackButton.isEnabled = true
+        hidePracticeHint()
+        if (sheetPlaybackMode == SheetPlaybackMode.WAIT_FOR_NOTE) {
+            startWaitForNotePlayback()
+        }
 
         sheetSelectionContainer.visibility = View.GONE
         playContainer.visibility = View.VISIBLE
@@ -289,6 +313,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showSheetSelection() {
         noteBand.pausePlayback()
+        hidePracticeHint()
         playContainer.visibility = View.GONE
         pianoTestContainer.visibility = View.GONE
         sheetSelectionContainer.visibility = View.VISIBLE
@@ -296,6 +321,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showPianoTest() {
         noteBand.pausePlayback()
+        hidePracticeHint()
         sheetSelectionContainer.visibility = View.GONE
         playContainer.visibility = View.GONE
         pianoTestContainer.visibility = View.VISIBLE
@@ -303,6 +329,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun toggleSheetPlayback() {
+        if (sheetPlaybackMode == SheetPlaybackMode.WAIT_FOR_NOTE) {
+            startWaitForNotePlayback()
+            return
+        }
+
         if (noteBand.hasPlaybackFinished()) {
             pausePlaybackButton.text = "Finished"
             pausePlaybackButton.isEnabled = false
@@ -315,6 +346,55 @@ class MainActivity : AppCompatActivity() {
         } else {
             noteBand.pausePlayback()
             pausePlaybackButton.text = "Resume"
+        }
+    }
+
+    private fun toggleSheetPlaybackMode() {
+        sheetPlaybackMode = when (sheetPlaybackMode) {
+            SheetPlaybackMode.FLOW -> SheetPlaybackMode.WAIT_FOR_NOTE
+            SheetPlaybackMode.WAIT_FOR_NOTE -> SheetPlaybackMode.FLOW
+        }
+        updateSheetPlaybackModeButton()
+
+        val song = currentSong ?: return
+        exercise = SimpleNoteExercise(song.notes)
+        noteBand.setSongNotes(song.visualNotes, autoplay = sheetPlaybackMode == SheetPlaybackMode.FLOW)
+        pausePlaybackButton.isEnabled = true
+        pausePlaybackButton.text = "Pause"
+        hidePracticeHint()
+
+        if (sheetPlaybackMode == SheetPlaybackMode.WAIT_FOR_NOTE) {
+            startWaitForNotePlayback()
+        }
+    }
+
+    private fun updateSheetPlaybackModeButton() {
+        noteGateModeButton.text = when (sheetPlaybackMode) {
+            SheetPlaybackMode.FLOW -> "Mode: Flow"
+            SheetPlaybackMode.WAIT_FOR_NOTE -> "Mode: Wait"
+        }
+    }
+
+    private fun startWaitForNotePlayback() {
+        if (!::exercise.isInitialized) return
+        if (exercise.isFinished()) {
+            finishWaitForNotePlayback()
+            return
+        }
+
+        hidePracticeHint()
+        pausePlaybackButton.text = "Waiting"
+        pausePlaybackButton.isEnabled = true
+        noteBand.scrollToNote(exercise.currentIndex()) {
+            schedulePracticeHint()
+        }
+    }
+
+    private fun finishWaitForNotePlayback() {
+        hidePracticeHint()
+        noteBand.scrollToNote(Int.MAX_VALUE) {
+            pausePlaybackButton.text = "Finished"
+            pausePlaybackButton.isEnabled = false
         }
     }
 
@@ -479,10 +559,20 @@ class MainActivity : AppCompatActivity() {
     private fun handleDetectedNote(noteName: String) {
         noteBand.setDetectedNote(noteName)
 
-        if (playContainer.visibility == View.VISIBLE &&
-            ::exercise.isInitialized &&
-            exercise.onNoteDetected(noteName, SystemClock.elapsedRealtime())
-        ) {
+        if (playContainer.visibility != View.VISIBLE || !::exercise.isInitialized) return
+
+        val nowMs = SystemClock.elapsedRealtime()
+        if (sheetPlaybackMode == SheetPlaybackMode.WAIT_FOR_NOTE) {
+            if (exercise.matchesCurrentNote(noteName, nowMs)) {
+                showGreatWork()
+                hidePracticeHint()
+                if (exercise.isFinished()) {
+                    finishWaitForNotePlayback()
+                } else {
+                    startWaitForNotePlayback()
+                }
+            }
+        } else if (exercise.onNoteDetected(noteName, nowMs)) {
             showGreatWork()
         }
     }
@@ -495,11 +585,36 @@ class MainActivity : AppCompatActivity() {
 
     private fun updatePressedNotes() {
         pianoKeyboardView.setPressedNotes(pressedMidiNotes)
+        practiceHintKeyboardView.setPressedNotes(pressedMidiNotes)
         val pressedText = pressedMidiNotes
             .sorted()
             .joinToString(" ") { MidiNoteExtractor.noteName(it) }
             .ifBlank { "none" }
         pressedNotesText.text = "Pressed: $pressedText"
+    }
+
+    private fun schedulePracticeHint() {
+        hintTargetNote = exercise.currentNote()
+        practiceHintKeyboardView.removeCallbacks(showHintRunnable)
+        practiceHintKeyboardView.postDelayed(showHintRunnable, NOTE_HINT_DELAY_MS)
+    }
+
+    private fun showPracticeHintIfStillWaiting() {
+        val targetNote = hintTargetNote ?: return
+        if (playContainer.visibility != View.VISIBLE) return
+        if (sheetPlaybackMode != SheetPlaybackMode.WAIT_FOR_NOTE) return
+        if (targetNote != exercise.currentNote()) return
+
+        val targetNoteNumber = midiNoteNumberForName(targetNote) ?: return
+        practiceHintKeyboardView.setSuggestedNotes(setOf(targetNoteNumber))
+        practiceHintKeyboardView.visibility = View.VISIBLE
+    }
+
+    private fun hidePracticeHint() {
+        practiceHintKeyboardView.removeCallbacks(showHintRunnable)
+        hintTargetNote = null
+        practiceHintKeyboardView.clearSuggestedNotes()
+        practiceHintKeyboardView.visibility = View.GONE
     }
 
     private fun showGreatWork() {
@@ -557,6 +672,7 @@ class MainActivity : AppCompatActivity() {
         private const val OCTET_STREAM_MIME_TYPE = "application/octet-stream"
         private const val ANY_FILE_MIME_TYPE = "*/*"
         private const val NOTES_PER_OCTAVE = 12
+        private const val NOTE_HINT_DELAY_MS = 5_000L
         private val NOTE_NAME_PATTERN = Regex("^([A-G]#?)(-?\\d+)$")
         private val NOTE_NAME_TO_OFFSET = mapOf(
             "C" to 0,
