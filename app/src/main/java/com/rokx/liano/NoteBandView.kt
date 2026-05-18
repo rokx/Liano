@@ -81,6 +81,7 @@ class NoteBandView @JvmOverloads constructor(
     private var lastInputMarkBeat = Float.NEGATIVE_INFINITY
     private var songEndBeat = songNotes.maxOf { it.startBeat + it.lengthBeats }
     private var playbackWasCancelled = false
+    private var pendingScrollFinished: (() -> Unit)? = null
     private var lastDragX = 0f
     private var hasDragged = false
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
@@ -108,7 +109,10 @@ class NoteBandView @JvmOverloads constructor(
                     scrollBeat = songEndBeat
                     invalidate()
                     onPlaybackFinished?.invoke()
+                } else if (!playbackWasCancelled) {
+                    pendingScrollFinished?.invoke()
                 }
+                pendingScrollFinished = null
             }
         })
     }
@@ -154,6 +158,19 @@ class NoteBandView @JvmOverloads constructor(
 
     fun hasPlaybackFinished(): Boolean = scrollBeat >= songEndBeat && !animator.isRunning
 
+    fun scrollToNote(index: Int, onFinished: (() -> Unit)? = null) {
+        val targetBeat = songNotes.getOrNull(index)?.startBeat ?: songEndBeat
+        animateScrollToBeat(targetBeat.coerceIn(0f, songEndBeat), onFinished)
+    }
+
+    fun jumpToNote(index: Int) {
+        val targetBeat = songNotes.getOrNull(index)?.startBeat ?: songEndBeat
+        animator.cancel()
+        scrollBeat = targetBeat.coerceIn(0f, songEndBeat)
+        configurePlaybackAnimator()
+        invalidate()
+    }
+
     fun setDetectedNote(noteName: String) {
         currentNoteName = noteName
         addInputMark(noteName)
@@ -183,6 +200,26 @@ class NoteBandView @JvmOverloads constructor(
         scrollBeat = (scrollBeat - deltaX / beatWidth).coerceIn(0f, songEndBeat)
         animator.currentPlayTime = (scrollBeat * MS_PER_BEAT).roundToLong()
         invalidate()
+    }
+
+    private fun animateScrollToBeat(targetBeat: Float, onFinished: (() -> Unit)? = null) {
+        animator.cancel()
+        pendingScrollFinished = onFinished
+
+        val distance = abs(targetBeat - scrollBeat)
+        if (distance < MIN_SCROLL_DISTANCE_BEATS) {
+            scrollBeat = targetBeat
+            invalidate()
+            pendingScrollFinished?.invoke()
+            pendingScrollFinished = null
+            configurePlaybackAnimator()
+            return
+        }
+
+        animator.setFloatValues(scrollBeat, targetBeat)
+        animator.duration = max(MIN_SCROLL_ANIMATION_MS, (distance * MS_PER_BEAT).roundToLong())
+        animator.repeatCount = 0
+        animator.start()
     }
 
     private fun currentBeatWidth(): Float {
@@ -369,6 +406,8 @@ class NoteBandView @JvmOverloads constructor(
     companion object {
         private const val MAX_INPUT_MARKS = 260
         private const val MIN_INPUT_MARK_BEAT_SPACING = 0.06f
+        private const val MIN_SCROLL_DISTANCE_BEATS = 0.01f
+        private const val MIN_SCROLL_ANIMATION_MS = 220L
         private const val MS_PER_BEAT = 1250L
         private const val NATURAL_NOTES_PER_OCTAVE = 7
         private const val TREBLE_C4_STAFF_POSITION = 5f
@@ -392,6 +431,7 @@ class NoteBandView @JvmOverloads constructor(
 
     private fun configurePlaybackAnimator() {
         animator.cancel()
+        pendingScrollFinished = null
         animator.setFloatValues(scrollBeat, songEndBeat)
         animator.duration = max(1L, ((songEndBeat - scrollBeat) * MS_PER_BEAT).roundToLong())
         animator.repeatCount = 0
