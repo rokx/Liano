@@ -342,7 +342,7 @@ class NoteBandView @JvmOverloads constructor(
             if (x < paddingLeft || x > width - paddingRight) return@forEach
 
             val y = noteY(mark.noteName, trebleStaffTop, bassStaffTop, lineSpacing)
-            canvas.drawCircle(x, y, 9f, inputPaint)
+            canvas.drawCircle(x, y, 11f, inputPaint)
         }
 
         songNotes.forEach { note ->
@@ -355,13 +355,13 @@ class NoteBandView @JvmOverloads constructor(
 
             canvas.save()
             canvas.rotate(-18f, x, y)
-            canvas.drawOval(x - 14f, y - 10f, x + 14f, y + 10f, paint)
+            canvas.drawOval(x - 18f, y - 13f, x + 18f, y + 13f, paint)
             canvas.restore()
 
-            canvas.drawLine(x + 12f, y, x + 12f, y - 68f, paint)
+            canvas.drawLine(x + 15f, y, x + 15f, y - 82f, paint)
 
             if (note.name == "C4") {
-                canvas.drawLine(x - 24f, y, x + 24f, y, staffPaint)
+                canvas.drawLine(x - 30f, y, x + 30f, y, staffPaint)
             }
         }
     }
