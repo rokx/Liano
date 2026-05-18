@@ -80,6 +80,7 @@ class NoteBandView @JvmOverloads constructor(
     private var inputMarks = emptyList<InputMark>()
     private var lastInputMarkBeat = Float.NEGATIVE_INFINITY
     private var songEndBeat = songNotes.maxOf { it.startBeat + it.lengthBeats }
+    private var beatsPerMinute = DEFAULT_BEATS_PER_MINUTE
     private var playbackWasCancelled = false
     private var pendingScrollFinished: (() -> Unit)? = null
     private var lastDragX = 0f
@@ -141,6 +142,17 @@ class NoteBandView @JvmOverloads constructor(
         invalidate()
     }
 
+    fun setBeatsPerMinute(bpm: Int) {
+        beatsPerMinute = bpm.coerceIn(MIN_BEATS_PER_MINUTE, MAX_BEATS_PER_MINUTE)
+        val wasRunning = animator.isRunning && !animator.isPaused
+        val wasPaused = animator.isPaused
+        configurePlaybackAnimator()
+        when {
+            wasRunning -> animator.start()
+            wasPaused -> animator.pause()
+        }
+    }
+
     fun pausePlayback() {
         if (animator.isRunning && !animator.isPaused) {
             animator.pause()
@@ -198,7 +210,7 @@ class NoteBandView @JvmOverloads constructor(
         if (beatWidth <= 0f) return
 
         scrollBeat = (scrollBeat - deltaX / beatWidth).coerceIn(0f, songEndBeat)
-        animator.currentPlayTime = (scrollBeat * MS_PER_BEAT).roundToLong()
+        animator.currentPlayTime = (scrollBeat * msPerBeat()).roundToLong()
         invalidate()
     }
 
@@ -217,7 +229,7 @@ class NoteBandView @JvmOverloads constructor(
         }
 
         animator.setFloatValues(scrollBeat, targetBeat)
-        animator.duration = max(MIN_SCROLL_ANIMATION_MS, (distance * MS_PER_BEAT).roundToLong())
+        animator.duration = max(MIN_SCROLL_ANIMATION_MS, (distance * msPerBeat()).roundToLong())
         animator.repeatCount = 0
         animator.start()
     }
@@ -408,7 +420,9 @@ class NoteBandView @JvmOverloads constructor(
         private const val MIN_INPUT_MARK_BEAT_SPACING = 0.06f
         private const val MIN_SCROLL_DISTANCE_BEATS = 0.01f
         private const val MIN_SCROLL_ANIMATION_MS = 220L
-        private const val MS_PER_BEAT = 1250L
+        private const val DEFAULT_BEATS_PER_MINUTE = 60
+        private const val MIN_BEATS_PER_MINUTE = 20
+        private const val MAX_BEATS_PER_MINUTE = 150
         private const val NATURAL_NOTES_PER_OCTAVE = 7
         private const val TREBLE_C4_STAFF_POSITION = 5f
         private const val BASS_C4_STAFF_POSITION = -1f
@@ -433,7 +447,9 @@ class NoteBandView @JvmOverloads constructor(
         animator.cancel()
         pendingScrollFinished = null
         animator.setFloatValues(scrollBeat, songEndBeat)
-        animator.duration = max(1L, ((songEndBeat - scrollBeat) * MS_PER_BEAT).roundToLong())
+        animator.duration = max(1L, ((songEndBeat - scrollBeat) * msPerBeat()).roundToLong())
         animator.repeatCount = 0
     }
+
+    private fun msPerBeat(): Long = 60_000L / beatsPerMinute
 }

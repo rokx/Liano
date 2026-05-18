@@ -1,5 +1,8 @@
 {
   "title": "Bright Ladder",
+  "metronome": {
+    "beatsPerMinute": 90
+  },
   "notes": [
     "C4",
     "E4",

@@ -1,5 +1,8 @@
 {
   "title": "Calm Cadence",
+  "metronome": {
+    "beatsPerMinute": 55
+  },
   "notes": [
     "C4",
     "G4",

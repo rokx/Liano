@@ -1,5 +1,8 @@
 {
   "title": "Gentle Harmony",
+  "metronome": {
+    "beatsPerMinute": 70
+  },
   "notes": [
     "C4",
     "E4",

@@ -54,12 +54,25 @@
                     android:id="@+id/pianoTestButton"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="6dp"
+                    android:layout_marginHorizontal="3dp"
                     android:layout_weight="1"
                     android:background="@drawable/bg_song_button"
                     android:minHeight="44dp"
                     android:padding="8dp"
                     android:text="Test USB piano"
+                    android:textColor="@android:color/black"
+                    android:textSize="13sp" />
+
+                <Button
+                    android:id="@+id/openMetronomeButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_song_button"
+                    android:minHeight="44dp"
+                    android:padding="8dp"
+                    android:text="Metronome"
                     android:textColor="@android:color/black"
                     android:textSize="13sp" />
             </LinearLayout>
@@ -171,6 +184,15 @@
             android:textStyle="bold" />
 
         <TextView
+            android:id="@+id/metronomeSpeedText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:text="Metronome: 60 BPM"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
             android:id="@+id/greatWorkText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -254,5 +276,87 @@
             android:layout_marginTop="16dp"
             android:text="Pressed: none"
             android:textSize="20sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/metronomeContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#F7FAFF"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/backFromMetronomeButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Back" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="20dp"
+                android:layout_weight="1"
+                android:text="Metronome settings"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/bpmValueText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="72dp"
+            android:text="60 BPM"
+            android:textSize="42sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/decreaseBpmButton"
+                android:layout_width="76dp"
+                android:layout_height="64dp"
+                android:text="-"
+                android:textSize="30sp" />
+
+            <Button
+                android:id="@+id/increaseBpmButton"
+                android:layout_width="76dp"
+                android:layout_height="64dp"
+                android:layout_marginStart="18dp"
+                android:text="+"
+                android:textSize="30sp" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/metronomeStartStopButton"
+            android:layout_width="220dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:minHeight="54dp"
+            android:text="Start"
+            android:textSize="18sp" />
+
+        <CheckBox
+            android:id="@+id/keepMetronomeInBackgroundCheckBox"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="Keep metronome playing in background"
+            android:textSize="17sp" />
     </LinearLayout>
 </FrameLayout>
