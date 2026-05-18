@@ -29,6 +29,11 @@ class NoteBandView @JvmOverloads constructor(
         val lane: Int
     )
 
+    private enum class Staff {
+        TREBLE,
+        BASS
+    }
+
     private var songNotes = listOf(
         SongNote("C4", 0f, 1f, 0),
         SongNote("D4", 1.4f, 1f, 1)
@@ -122,7 +127,7 @@ class NoteBandView @JvmOverloads constructor(
         super.onDetachedFromWindow()
     }
 
-    fun setSongNotes(notes: List<SongNote>, autoplay: Boolean = true) {
+    fun setSongNotes(notes: List<SongNote>, restartPlayback: Boolean = true) {
         songNotes = notes
         inputMarks = emptyList()
         lastInputMarkBeat = Float.NEGATIVE_INFINITY
@@ -130,7 +135,7 @@ class NoteBandView @JvmOverloads constructor(
         songEndBeat = notes.maxOfOrNull { it.startBeat + it.lengthBeats } ?: 1f
         scrollBeat = 0f
         configurePlaybackAnimator()
-        if (autoplay) {
+        if (restartPlayback) {
             animator.start()
         }
         invalidate()
@@ -278,22 +283,49 @@ class NoteBandView @JvmOverloads constructor(
         val staffLeft = paddingLeft + 86f
         val staffRight = width - paddingRight - 20f
         val lineSpacing = max(15f, contentHeight / 15f)
-        val trebleStaffTop = paddingTop + contentHeight * 0.08f
-        val bassStaffTop = trebleStaffTop + lineSpacing * 7.1f
+        val visibleStaves = visibleStaves()
+        val singleStaffTop = paddingTop + (contentHeight - lineSpacing * 4f) / 2f
+        val trebleStaffTop = if (visibleStaves == setOf(Staff.TREBLE)) {
+            singleStaffTop
+        } else {
+            paddingTop + contentHeight * 0.08f
+        }
+        val bassStaffTop = if (visibleStaves == setOf(Staff.BASS)) {
+            singleStaffTop
+        } else {
+            trebleStaffTop + lineSpacing * 7.1f
+        }
 
-        drawStaff(canvas, staffLeft, staffRight.toFloat(), trebleStaffTop, lineSpacing)
-        drawStaff(canvas, staffLeft, staffRight.toFloat(), bassStaffTop, lineSpacing)
-        drawClefs(canvas, paddingLeft + 18f, trebleStaffTop, bassStaffTop, lineSpacing)
+        if (Staff.TREBLE in visibleStaves) {
+            drawStaff(canvas, staffLeft, staffRight.toFloat(), trebleStaffTop, lineSpacing)
+        }
+        if (Staff.BASS in visibleStaves) {
+            drawStaff(canvas, staffLeft, staffRight.toFloat(), bassStaffTop, lineSpacing)
+        }
+        drawClefs(canvas, paddingLeft + 18f, trebleStaffTop, bassStaffTop, lineSpacing, visibleStaves)
+
+        val cursorTop = if (Staff.TREBLE in visibleStaves) {
+            trebleStaffTop - lineSpacing * 1.5f
+        } else {
+            bassStaffTop - lineSpacing * 1.5f
+        }
+        val cursorBottom = if (Staff.BASS in visibleStaves) {
+            bassStaffTop + lineSpacing * 4.75f
+        } else {
+            trebleStaffTop + lineSpacing * 4.75f
+        }
 
         canvas.drawLine(
             targetX,
-            trebleStaffTop - lineSpacing * 1.5f,
+            cursorTop,
             targetX,
-            bassStaffTop + lineSpacing * 4.75f,
+            cursorBottom,
             cursorPaint
         )
 
         inputMarks.forEach { mark ->
+            if (staffForNoteName(mark.noteName) !in visibleStaves) return@forEach
+
             val x = targetX + (mark.beat - scrollBeat) * beatWidth
             if (x < paddingLeft || x > width - paddingRight) return@forEach
 
@@ -329,12 +361,23 @@ class NoteBandView @JvmOverloads constructor(
         }
     }
 
-    private fun drawClefs(canvas: Canvas, x: Float, trebleStaffTop: Float, bassStaffTop: Float, spacing: Float) {
-        clefPaint.textSize = spacing * 3.9f
-        canvas.drawText(TREBLE_CLEF, x, trebleStaffTop + spacing * 3.45f, clefPaint)
+    private fun drawClefs(
+        canvas: Canvas,
+        x: Float,
+        trebleStaffTop: Float,
+        bassStaffTop: Float,
+        spacing: Float,
+        visibleStaves: Set<Staff>
+    ) {
+        if (Staff.TREBLE in visibleStaves) {
+            clefPaint.textSize = spacing * 3.9f
+            canvas.drawText(TREBLE_CLEF, x, trebleStaffTop + spacing * 3.45f, clefPaint)
+        }
 
-        clefPaint.textSize = spacing * 2.9f
-        canvas.drawText(BASS_CLEF, x + spacing * 0.2f, bassStaffTop + spacing * 3.15f, clefPaint)
+        if (Staff.BASS in visibleStaves) {
+            clefPaint.textSize = spacing * 2.9f
+            canvas.drawText(BASS_CLEF, x + spacing * 0.2f, bassStaffTop + spacing * 3.15f, clefPaint)
+        }
     }
 
     private fun noteY(noteName: String, trebleStaffTop: Float, bassStaffTop: Float, spacing: Float): Float {
@@ -347,6 +390,17 @@ class NoteBandView @JvmOverloads constructor(
         val c4Position = if (octave < 4) BASS_C4_STAFF_POSITION else TREBLE_C4_STAFF_POSITION
 
         return staffTop + spacing * (c4Position - diatonicStepsFromC4 * STAFF_POSITION_PER_STEP)
+    }
+
+    private fun visibleStaves(): Set<Staff> {
+        val staves = songNotes.mapTo(mutableSetOf()) { note -> staffForNoteName(note.name) }
+        return staves.ifEmpty { setOf(Staff.TREBLE) }
+    }
+
+    private fun staffForNoteName(noteName: String): Staff {
+        val parsedNote = NOTE_NAME_PATTERN.matchEntire(noteName) ?: return Staff.TREBLE
+        val octave = parsedNote.groupValues[2].toIntOrNull() ?: return Staff.TREBLE
+        return if (octave < 4) Staff.BASS else Staff.TREBLE
     }
 
     companion object {

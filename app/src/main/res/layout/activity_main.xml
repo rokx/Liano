@@ -141,6 +141,13 @@
                 android:text="Input: Microphone" />
 
             <Button
+                android:id="@+id/handSelectionButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="Play: Both hands" />
+
+            <Button
                 android:id="@+id/noteGateModeButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
