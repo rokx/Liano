@@ -2,6 +2,8 @@ package com.rokx.liano
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.Context
+import android.content.Intent
 import android.database.Cursor
 import android.net.Uri
 import android.media.AudioManager
@@ -17,11 +19,16 @@ import android.view.View
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.LinearLayout
+import android.widget.EditText
+import android.widget.ProgressBar
+import android.widget.RadioButton
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -32,11 +39,20 @@ import be.tarsos.dsp.io.android.AudioDispatcherFactory
 import be.tarsos.dsp.pitch.PitchProcessor
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlin.math.log2
 import kotlin.math.max
 import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity() {
+
+    private data class UserProfile(
+        val id: String,
+        var name: String,
+        var speedPercent: Int = DEFAULT_USER_SPEED_PERCENT,
+        val playedSongs: MutableSet<String> = mutableSetOf()
+    )
 
     private data class MetronomeSettings(
         val beatsPerMinute: Int = DEFAULT_BEATS_PER_MINUTE
@@ -115,6 +131,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var noteGateModeButton: Button
     private lateinit var pianoTestButton: Button
     private lateinit var openMetronomeButton: Button
+    private lateinit var openUserSettingsButton: Button
+    private lateinit var activeUserText: TextView
+    private lateinit var activeUserProgress: ProgressBar
     private lateinit var metronomeContainer: View
     private lateinit var backFromMetronomeButton: Button
     private lateinit var metronomeStartStopButton: Button
@@ -131,6 +150,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pressedNotesText: TextView
     private var handSelection = HandSelection.BOTH
     private var isSheetMetronomeSoundEnabled = false
+    private val userProfiles = mutableListOf<UserProfile>()
+    private lateinit var activeUserId: String
+    private var availableSongCount = 0
 
     private val midiPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(::importMidiSong)
@@ -163,6 +185,9 @@ class MainActivity : AppCompatActivity() {
         noteGateModeButton = findViewById(R.id.noteGateModeButton)
         pianoTestButton = findViewById(R.id.pianoTestButton)
         openMetronomeButton = findViewById(R.id.openMetronomeButton)
+        openUserSettingsButton = findViewById(R.id.openUserSettingsButton)
+        activeUserText = findViewById(R.id.activeUserText)
+        activeUserProgress = findViewById(R.id.activeUserProgress)
         metronomeContainer = findViewById(R.id.metronomeContainer)
         backFromMetronomeButton = findViewById(R.id.backFromMetronomeButton)
         metronomeStartStopButton = findViewById(R.id.metronomeStartStopButton)
@@ -223,6 +248,9 @@ class MainActivity : AppCompatActivity() {
         openMetronomeButton.setOnClickListener {
             showMetronomeSettings()
         }
+        openUserSettingsButton.setOnClickListener {
+            showUserSettings()
+        }
         backFromMetronomeButton.setOnClickListener {
             showSheetSelection()
         }
@@ -248,6 +276,7 @@ class MainActivity : AppCompatActivity() {
             stopSheetMetronomeSound()
             pausePlaybackButton.text = "Finished"
             pausePlaybackButton.isEnabled = false
+            markCurrentSongPlayed()
         }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -263,12 +292,15 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         })
+        loadUserProfiles()
         setupSheetButtons()
+        updateActiveUserUi()
         updateMetronomeUi()
         updateSheetMetronomeSoundButton()
         updateInputModeButtons()
         updateSheetPlaybackModeButton()
         startSelectedInput()
+        mainHandler.postDelayed(::checkForAppUpdate, UPDATE_CHECK_DELAY_MS)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -287,7 +319,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupSheetButtons() {
-        loadSongsFromAssets().forEach(::addSongButton)
+        val songs = loadSongsFromAssets()
+        availableSongCount = songs.size
+        songs.forEach(::addSongButton)
     }
 
     private fun addSongButton(song: SheetSong, addToTop: Boolean = false) {
@@ -387,7 +421,7 @@ class MainActivity : AppCompatActivity() {
         handSelection = defaultHandSelection(song)
         isSheetMetronomeSoundEnabled = false
         updateSheetMetronomeSoundButton()
-        setBpm(song.metronomeSettings.beatsPerMinute)
+        setBpm(playbackBpmFor(song))
         showSongWithCurrentHandSelection(restartPlayback = true)
 
         sheetSelectionContainer.visibility = View.GONE
@@ -768,7 +802,216 @@ class MainActivity : AppCompatActivity() {
         noteBand.scrollToNote(Int.MAX_VALUE) {
             pausePlaybackButton.text = "Finished"
             pausePlaybackButton.isEnabled = false
+            markCurrentSongPlayed()
         }
+    }
+
+    private fun playbackBpmFor(song: SheetSong): Int =
+        (song.metronomeSettings.beatsPerMinute * activeUser().speedPercent / 100f)
+            .roundToInt()
+            .coerceToValidBpm()
+
+    private fun activeUser(): UserProfile =
+        userProfiles.firstOrNull { it.id == activeUserId } ?: userProfiles.first()
+
+    private fun markCurrentSongPlayed() {
+        val songTitle = currentSong?.title ?: return
+        if (activeUser().playedSongs.add(songTitle)) {
+            saveUserProfiles()
+            updateActiveUserUi()
+        }
+    }
+
+    private fun updateActiveUserUi() {
+        if (!::activeUserText.isInitialized || userProfiles.isEmpty()) return
+        val user = activeUser()
+        val played = user.playedSongs.size.coerceAtMost(availableSongCount)
+        val progress = if (availableSongCount == 0) 0 else played * 100 / availableSongCount
+        activeUserText.text = "${user.name}: $played/$availableSongCount songs · ${user.speedPercent}% speed"
+        activeUserProgress.progress = progress
+    }
+
+    private fun showUserSettings() {
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 16, 40, 8)
+        }
+        val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content.addView(rows)
+
+        fun rebuildRows() {
+            rows.removeAllViews()
+            userProfiles.forEach { user ->
+                val header = RadioButton(this).apply {
+                    text = user.name
+                    isChecked = user.id == activeUserId
+                    setOnClickListener {
+                        activeUserId = user.id
+                        saveUserProfiles()
+                        updateActiveUserUi()
+                        rebuildRows()
+                    }
+                }
+                rows.addView(header)
+                val played = user.playedSongs.size.coerceAtMost(availableSongCount)
+                rows.addView(TextView(this).apply {
+                    text = "Knowledge: $played of $availableSongCount songs played"
+                })
+                rows.addView(ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+                    max = availableSongCount.coerceAtLeast(1)
+                    progress = played
+                }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 24))
+                val speedLabel = TextView(this).apply { text = "Playback speed: ${user.speedPercent}%" }
+                rows.addView(speedLabel)
+                rows.addView(SeekBar(this).apply {
+                    max = MAX_USER_SPEED_PERCENT - MIN_USER_SPEED_PERCENT
+                    progress = user.speedPercent - MIN_USER_SPEED_PERCENT
+                    setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                        override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                            if (!fromUser) return
+                            user.speedPercent = MIN_USER_SPEED_PERCENT + progress
+                            speedLabel.text = "Playback speed: ${user.speedPercent}%"
+                            saveUserProfiles()
+                            updateActiveUserUi()
+                        }
+                        override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+                        override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
+                    })
+                })
+            }
+        }
+        rebuildRows()
+
+        val nameInput = EditText(this).apply { hint = "New user name" }
+        content.addView(nameInput)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("User settings")
+            .setView(content)
+            .setNegativeButton("Close", null)
+            .setPositiveButton("Add user", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val name = nameInput.text.toString().trim()
+                if (name.isBlank()) {
+                    nameInput.error = "Enter a name"
+                } else {
+                    val user = UserProfile(System.currentTimeMillis().toString(), name)
+                    userProfiles += user
+                    activeUserId = user.id
+                    nameInput.text.clear()
+                    saveUserProfiles()
+                    updateActiveUserUi()
+                    rebuildRows()
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun loadUserProfiles() {
+        val preferences = getSharedPreferences(USER_PREFERENCES, Context.MODE_PRIVATE)
+        val saved = preferences.getString(USER_PROFILES_KEY, null)
+        if (saved != null) runCatching {
+            val array = JSONArray(saved)
+            repeat(array.length()) { index ->
+                val json = array.getJSONObject(index)
+                val played = json.optJSONArray("playedSongs") ?: JSONArray()
+                userProfiles += UserProfile(
+                    id = json.getString("id"),
+                    name = json.getString("name"),
+                    speedPercent = json.optInt("speedPercent", DEFAULT_USER_SPEED_PERCENT)
+                        .coerceIn(MIN_USER_SPEED_PERCENT, MAX_USER_SPEED_PERCENT),
+                    playedSongs = MutableList(played.length()) { played.getString(it) }.toMutableSet()
+                )
+            }
+        }
+        if (userProfiles.isEmpty()) userProfiles += UserProfile("default", "Player")
+        activeUserId = preferences.getString(ACTIVE_USER_KEY, userProfiles.first().id)
+            ?.takeIf { id -> userProfiles.any { it.id == id } }
+            ?: userProfiles.first().id
+    }
+
+    private fun saveUserProfiles() {
+        val array = JSONArray()
+        userProfiles.forEach { user ->
+            array.put(JSONObject().apply {
+                put("id", user.id)
+                put("name", user.name)
+                put("speedPercent", user.speedPercent)
+                put("playedSongs", JSONArray(user.playedSongs.toList()))
+            })
+        }
+        getSharedPreferences(USER_PREFERENCES, Context.MODE_PRIVATE).edit()
+            .putString(USER_PROFILES_KEY, array.toString())
+            .putString(ACTIVE_USER_KEY, activeUserId)
+            .apply()
+    }
+
+    private fun checkForAppUpdate() {
+        Thread {
+            runCatching {
+                val connection = (URL(LATEST_RELEASE_API_URL).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = UPDATE_CONNECT_TIMEOUT_MS
+                    readTimeout = UPDATE_READ_TIMEOUT_MS
+                    requestMethod = "GET"
+                    setRequestProperty("Accept", "application/vnd.github+json")
+                    setRequestProperty("User-Agent", "Liano-Android")
+                }
+                try {
+                    if (connection.responseCode !in 200..299) return@runCatching
+                    val release = connection.inputStream.bufferedReader().use { JSONObject(it.readText()) }
+                    val latestVersion = release.optString("tag_name").trimStart('v')
+                    if (!isNewerVersion(latestVersion, currentVersionName())) return@runCatching
+
+                    val releasePageUrl = release.optString("html_url", RELEASES_PAGE_URL)
+                    val assets = release.optJSONArray("assets") ?: JSONArray()
+                    val apkUrl = (0 until assets.length())
+                        .map { assets.getJSONObject(it) }
+                        .firstOrNull { it.optString("name").endsWith(".apk", ignoreCase = true) }
+                        ?.optString("browser_download_url")
+                        .orEmpty()
+                        .ifBlank { releasePageUrl }
+                    runOnUiThread { showUpdateAvailable(latestVersion, apkUrl, releasePageUrl) }
+                } finally {
+                    connection.disconnect()
+                }
+            }
+        }.start()
+    }
+
+    private fun showUpdateAvailable(version: String, apkUrl: String, releasePageUrl: String) {
+        if (isFinishing || isDestroyed) return
+        AlertDialog.Builder(this)
+            .setTitle("Update available")
+            .setMessage("Liano $version is available.")
+            .setPositiveButton("Download") { _, _ -> openWebAddress(apkUrl) }
+            .setNeutralButton("Release page") { _, _ -> openWebAddress(releasePageUrl) }
+            .setNegativeButton("Later", null)
+            .show()
+    }
+
+    private fun openWebAddress(address: String) {
+        runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(address)))
+        }
+    }
+
+    private fun currentVersionName(): String = runCatching {
+        @Suppress("DEPRECATION")
+        packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
+    }.getOrDefault("")
+
+    private fun isNewerVersion(candidate: String, current: String): Boolean {
+        val candidateParts = candidate.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
+        val currentParts = current.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
+        val length = max(candidateParts.size, currentParts.size)
+        repeat(length) { index ->
+            val candidatePart = candidateParts.getOrElse(index) { 0 }
+            val currentPart = currentParts.getOrElse(index) { 0 }
+            if (candidatePart != currentPart) return candidatePart > currentPart
+        }
+        return false
     }
 
     private fun requestMicPermission() {
@@ -1076,6 +1319,17 @@ class MainActivity : AppCompatActivity() {
         private const val ANY_FILE_MIME_TYPE = "*/*"
         private const val NOTES_PER_OCTAVE = 12
         private const val NOTE_HINT_DELAY_MS = 5_000L
+        private const val DEFAULT_USER_SPEED_PERCENT = 50
+        private const val MIN_USER_SPEED_PERCENT = 25
+        private const val MAX_USER_SPEED_PERCENT = 100
+        private const val USER_PREFERENCES = "user_profiles"
+        private const val USER_PROFILES_KEY = "profiles"
+        private const val ACTIVE_USER_KEY = "active_user"
+        private const val UPDATE_CHECK_DELAY_MS = 1_500L
+        private const val UPDATE_CONNECT_TIMEOUT_MS = 4_000
+        private const val UPDATE_READ_TIMEOUT_MS = 4_000
+        private const val LATEST_RELEASE_API_URL = "https://api.github.com/repos/rokx/Liano/releases/latest"
+        private const val RELEASES_PAGE_URL = "https://github.com/rokx/Liano/releases"
         private const val MIDDLE_C_MIDI_NOTE = 60
         private val NOTE_NAME_PATTERN = Regex("^([A-G]#?)(-?\\d+)$")
         private val NOTE_OCTAVE_SUFFIX_PATTERN = Regex("-?\\d+$")

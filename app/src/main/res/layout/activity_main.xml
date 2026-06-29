@@ -75,6 +75,19 @@
                     android:text="Metronome"
                     android:textColor="@android:color/black"
                     android:textSize="13sp" />
+
+                <Button
+                    android:id="@+id/openUserSettingsButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_song_button"
+                    android:minHeight="44dp"
+                    android:padding="8dp"
+                    android:text="Users"
+                    android:textColor="@android:color/black"
+                    android:textSize="13sp" />
             </LinearLayout>
 
             <Space
@@ -88,6 +101,32 @@
                 android:contentDescription="@string/app_logo"
                 android:scaleType="centerInside"
                 android:src="@drawable/ic_liano_launcher" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="520dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/activeUserText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Player"
+                android:textColor="@android:color/white"
+                android:textStyle="bold" />
+
+            <ProgressBar
+                android:id="@+id/activeUserProgress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="0dp"
+                android:layout_height="12dp"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:max="100"
+                android:progress="0" />
         </LinearLayout>
 
         <TextView
