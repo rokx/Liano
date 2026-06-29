@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.util.AttributeSet
+import android.view.MotionEvent
 import android.view.View
 import kotlin.math.max
 
@@ -52,6 +53,19 @@ class PianoKeyboardView @JvmOverloads constructor(
 
     private val pressedNotes = mutableSetOf<Int>()
     private val suggestedNotes = mutableSetOf<Int>()
+    private val pointerNotes = mutableMapOf<Int, Int>()
+    private var firstNote = DEFAULT_FIRST_NOTE
+    private var lastNote = DEFAULT_LAST_NOTE
+
+    var onNotePressed: ((Int) -> Unit)? = null
+    var onNoteReleased: ((Int) -> Unit)? = null
+
+    fun setNoteRange(firstNote: Int, lastNote: Int) {
+        require(firstNote in 0..127 && lastNote in firstNote..127)
+        this.firstNote = firstNote
+        this.lastNote = lastNote
+        invalidate()
+    }
 
     fun setPressedNotes(notes: Set<Int>) {
         pressedNotes.clear()
@@ -87,7 +101,7 @@ class PianoKeyboardView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val whiteNotes = (FIRST_NOTE..LAST_NOTE).filterNot(::isBlackKey)
+        val whiteNotes = (firstNote..lastNote).filterNot(::isBlackKey)
         val contentWidth = width - paddingLeft - paddingRight
         val contentHeight = height - paddingTop - paddingBottom
         if (contentWidth <= 0 || contentHeight <= 0) return
@@ -117,9 +131,9 @@ class PianoKeyboardView @JvmOverloads constructor(
 
         val blackKeyWidth = max(18f, whiteKeyWidth * 0.58f)
         val blackKeyHeight = whiteKeyHeight * 0.62f
-        for (noteNumber in FIRST_NOTE..LAST_NOTE) {
+        for (noteNumber in firstNote..lastNote) {
             if (!isBlackKey(noteNumber)) continue
-            val previousWhite = (noteNumber - 1 downTo FIRST_NOTE).firstOrNull { !isBlackKey(it) } ?: continue
+            val previousWhite = (noteNumber - 1 downTo firstNote).firstOrNull { !isBlackKey(it) } ?: continue
             val previousRect = whiteKeyRects[previousWhite] ?: continue
             val centerX = previousRect.right
             val rect = RectF(
@@ -141,12 +155,74 @@ class PianoKeyboardView @JvmOverloads constructor(
         }
     }
 
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (onNotePressed == null && onNoteReleased == null) return super.onTouchEvent(event)
+
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                val index = event.actionIndex
+                updatePointerNote(event.getPointerId(index), noteAt(event.getX(index), event.getY(index)))
+            }
+            MotionEvent.ACTION_MOVE -> {
+                repeat(event.pointerCount) { index ->
+                    updatePointerNote(event.getPointerId(index), noteAt(event.getX(index), event.getY(index)))
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+                releasePointer(event.getPointerId(event.actionIndex))
+                if (event.actionMasked == MotionEvent.ACTION_UP) performClick()
+            }
+            MotionEvent.ACTION_CANCEL -> pointerNotes.keys.toList().forEach(::releasePointer)
+        }
+        return true
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
+    }
+
+    private fun updatePointerNote(pointerId: Int, noteNumber: Int?) {
+        val previous = pointerNotes[pointerId]
+        if (previous == noteNumber) return
+        if (previous != null) onNoteReleased?.invoke(previous)
+        if (noteNumber == null) {
+            pointerNotes.remove(pointerId)
+        } else {
+            pointerNotes[pointerId] = noteNumber
+            onNotePressed?.invoke(noteNumber)
+        }
+    }
+
+    private fun releasePointer(pointerId: Int) {
+        pointerNotes.remove(pointerId)?.let { onNoteReleased?.invoke(it) }
+    }
+
+    private fun noteAt(x: Float, y: Float): Int? {
+        val whiteNotes = (firstNote..lastNote).filterNot(::isBlackKey)
+        val contentWidth = width - paddingLeft - paddingRight
+        val contentHeight = height - paddingTop - paddingBottom
+        if (contentWidth <= 0 || contentHeight <= 0 || x !in paddingLeft.toFloat()..(width - paddingRight).toFloat()) return null
+
+        val keyWidth = contentWidth / whiteNotes.size.toFloat()
+        val localX = x - paddingLeft
+        if (y <= paddingTop + contentHeight * 0.62f) {
+            for (note in firstNote..lastNote) {
+                if (!isBlackKey(note)) continue
+                val precedingWhiteCount = (firstNote until note).count { !isBlackKey(it) }
+                val center = precedingWhiteCount * keyWidth
+                if (localX in (center - keyWidth * 0.29f)..(center + keyWidth * 0.29f)) return note
+            }
+        }
+        return whiteNotes.getOrNull((localX / keyWidth).toInt().coerceAtMost(whiteNotes.lastIndex))
+    }
+
     private fun isBlackKey(noteNumber: Int): Boolean =
         noteNumber % NOTES_PER_OCTAVE in BLACK_KEY_OFFSETS
 
     private companion object {
-        private const val FIRST_NOTE = 48
-        private const val LAST_NOTE = 83
+        private const val DEFAULT_FIRST_NOTE = 48
+        private const val DEFAULT_LAST_NOTE = 83
         private const val NOTES_PER_OCTAVE = 12
         private val BLACK_KEY_OFFSETS = setOf(1, 3, 6, 8, 10)
     }

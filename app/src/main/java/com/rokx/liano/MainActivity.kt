@@ -129,6 +129,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var inputModeButton: Button
     private lateinit var playInputModeButton: Button
     private lateinit var noteGateModeButton: Button
+    private lateinit var testKeyboardToggleButton: Button
+    private lateinit var testKeyboardView: PianoKeyboardView
     private lateinit var pianoTestButton: Button
     private lateinit var openMetronomeButton: Button
     private lateinit var openUserSettingsButton: Button
@@ -183,6 +185,8 @@ class MainActivity : AppCompatActivity() {
         inputModeButton = findViewById(R.id.inputModeButton)
         playInputModeButton = findViewById(R.id.playInputModeButton)
         noteGateModeButton = findViewById(R.id.noteGateModeButton)
+        testKeyboardToggleButton = findViewById(R.id.testKeyboardToggleButton)
+        testKeyboardView = findViewById(R.id.testKeyboardView)
         pianoTestButton = findViewById(R.id.pianoTestButton)
         openMetronomeButton = findViewById(R.id.openMetronomeButton)
         openUserSettingsButton = findViewById(R.id.openUserSettingsButton)
@@ -224,6 +228,10 @@ class MainActivity : AppCompatActivity() {
         noteGateModeButton.setOnClickListener {
             toggleSheetPlaybackMode()
         }
+        testKeyboardView.setNoteRange(TEST_KEYBOARD_FIRST_NOTE, TEST_KEYBOARD_LAST_NOTE)
+        testKeyboardView.onNotePressed = ::onTestKeyboardNoteOn
+        testKeyboardView.onNoteReleased = ::onTestKeyboardNoteOff
+        testKeyboardToggleButton.setOnClickListener { toggleTestKeyboard() }
         sheetMetronomeSoundButton.setOnClickListener {
             toggleSheetMetronomeSound()
         }
@@ -1172,6 +1180,27 @@ class MainActivity : AppCompatActivity() {
         usbMidiInput = null
     }
 
+    private fun toggleTestKeyboard() {
+        val show = testKeyboardView.visibility != View.VISIBLE
+        testKeyboardView.visibility = if (show) View.VISIBLE else View.GONE
+        testKeyboardToggleButton.text = if (show) "Hide test keys" else "Show test keys"
+        if (!show) setPressedMidiNotes(emptySet())
+    }
+
+    private fun onTestKeyboardNoteOn(noteNumber: Int) {
+        val noteName = MidiNoteExtractor.noteName(noteNumber)
+        pressedMidiNotes += noteNumber
+        updatePressedNotes()
+        pitchText.text = "Test piano: $noteName"
+        handleDetectedNote(noteName)
+    }
+
+    private fun onTestKeyboardNoteOff(noteNumber: Int) {
+        pressedMidiNotes -= noteNumber
+        updatePressedNotes()
+        if (pressedMidiNotes.isEmpty()) noteBand.clearDetectedNote()
+    }
+
     private fun handleDetectedNote(noteName: String) {
         noteBand.setDetectedNote(noteName)
 
@@ -1331,6 +1360,8 @@ class MainActivity : AppCompatActivity() {
         private const val LATEST_RELEASE_API_URL = "https://api.github.com/repos/rokx/Liano/releases/latest"
         private const val RELEASES_PAGE_URL = "https://github.com/rokx/Liano/releases"
         private const val MIDDLE_C_MIDI_NOTE = 60
+        private const val TEST_KEYBOARD_FIRST_NOTE = 60
+        private const val TEST_KEYBOARD_LAST_NOTE = 72
         private val NOTE_NAME_PATTERN = Regex("^([A-G]#?)(-?\\d+)$")
         private val NOTE_OCTAVE_SUFFIX_PATTERN = Regex("-?\\d+$")
         private val NOTE_NAME_TO_OFFSET = mapOf(

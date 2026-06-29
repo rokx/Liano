@@ -12,6 +12,7 @@ The app is designed for landscape use and supports both microphone pitch detecti
 - Built-in beginner-friendly practice songs loaded from JSON assets
 - MIDI file import for creating playable exercises from your own songs
 - Piano test screen with highlighted pressed keys
+- Hideable one-octave touch keyboard for testing songs without USB MIDI hardware
 - Fullscreen landscape interface for focused practice
 
 ## Screens
