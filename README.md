@@ -65,6 +65,22 @@ The debug APK is generated in:
 app/build/outputs/apk/debug/
 ```
 
+## Publishing releases
+
+Release APKs are signed with a persistent key so Android can install each newer
+version over the previous one. Configure these GitHub Actions repository secrets:
+
+- `ANDROID_SIGNING_KEY`: the release keystore encoded as a single-line Base64 value
+- `ANDROID_KEYSTORE_PASSWORD`: the keystore password
+- `ANDROID_KEY_ALIAS`: the signing key alias
+- `ANDROID_KEY_PASSWORD`: the signing key password
+
+Keep the keystore and its passwords backed up securely. Losing or replacing the key
+prevents future APKs from updating installations signed with the old key. Before
+publishing, increment `versionCode` and `versionName` in `app/build.gradle.kts`, then
+push a matching `v<versionName>` tag. Release assets use the consistent name
+`Liano-v<versionName>.apk`.
+
 ## Project Structure
 
 ```text

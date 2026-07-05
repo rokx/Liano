@@ -11,15 +11,28 @@ android {
         applicationId = "com.rokx.liano"
         minSdk = 21
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.1.1"
+        versionCode = 5
+        versionName = "0.1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        create("release") {
+            val keystorePath = System.getenv("LIANO_KEYSTORE_PATH")
+            if (!keystorePath.isNullOrBlank()) {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("LIANO_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("LIANO_KEY_ALIAS")
+                keyPassword = System.getenv("LIANO_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

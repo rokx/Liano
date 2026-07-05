@@ -107,6 +107,7 @@ class MainActivity : AppCompatActivity() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val metronomeTone = ToneGenerator(AudioManager.STREAM_MUSIC, 85)
+    private val testPianoSound = TestPianoSound()
     private var currentBpm = DEFAULT_BEATS_PER_MINUTE
     private var isMetronomePlaying = false
     private var bpmHoldRunnable: Runnable? = null
@@ -118,6 +119,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sheetDecreaseBpmButton: Button
     private lateinit var sheetIncreaseBpmButton: Button
     private lateinit var sheetBpmValueText: TextView
+    private lateinit var sheetMetronomeControls: View
     private lateinit var noteBand: NoteBandView
     private lateinit var playContainer: View
     private lateinit var sheetSelectionContainer: View
@@ -155,6 +157,7 @@ class MainActivity : AppCompatActivity() {
     private val userProfiles = mutableListOf<UserProfile>()
     private lateinit var activeUserId: String
     private var availableSongCount = 0
+    private val keyboardHiddenViewVisibilities = mutableMapOf<View, Int>()
 
     private val midiPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(::importMidiSong)
@@ -174,6 +177,7 @@ class MainActivity : AppCompatActivity() {
         sheetDecreaseBpmButton = findViewById(R.id.sheetDecreaseBpmButton)
         sheetIncreaseBpmButton = findViewById(R.id.sheetIncreaseBpmButton)
         sheetBpmValueText = findViewById(R.id.sheetBpmValueText)
+        sheetMetronomeControls = findViewById(R.id.sheetMetronomeControls)
         noteBand = findViewById(R.id.noteBand)
         playContainer = findViewById(R.id.playContainer)
         sheetSelectionContainer = findViewById(R.id.sheetSelectionContainer)
@@ -1184,11 +1188,30 @@ class MainActivity : AppCompatActivity() {
         val show = testKeyboardView.visibility != View.VISIBLE
         testKeyboardView.visibility = if (show) View.VISIBLE else View.GONE
         testKeyboardToggleButton.text = if (show) "Hide test keys" else "Show test keys"
-        if (!show) setPressedMidiNotes(emptySet())
+        setKeyboardFocusedLayout(show)
+        if (!show) {
+            pressedMidiNotes.toList().forEach(testPianoSound::noteOff)
+            setPressedMidiNotes(emptySet())
+        }
+    }
+
+    private fun setKeyboardFocusedLayout(enabled: Boolean) {
+        val views = listOf(sheetMetronomeControls, taskText, metronomeSpeedText, pitchText)
+        if (enabled) {
+            views.forEach { view ->
+                keyboardHiddenViewVisibilities[view] = view.visibility
+                view.visibility = View.GONE
+            }
+        } else {
+            views.forEach { view ->
+                view.visibility = keyboardHiddenViewVisibilities.remove(view) ?: view.visibility
+            }
+        }
     }
 
     private fun onTestKeyboardNoteOn(noteNumber: Int) {
         val noteName = MidiNoteExtractor.noteName(noteNumber)
+        testPianoSound.noteOn(noteNumber)
         pressedMidiNotes += noteNumber
         updatePressedNotes()
         pitchText.text = "Test piano: $noteName"
@@ -1196,6 +1219,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onTestKeyboardNoteOff(noteNumber: Int) {
+        testPianoSound.noteOff(noteNumber)
         pressedMidiNotes -= noteNumber
         updatePressedNotes()
         if (pressedMidiNotes.isEmpty()) noteBand.clearDetectedNote()
@@ -1231,6 +1255,7 @@ class MainActivity : AppCompatActivity() {
     private fun updatePressedNotes() {
         pianoKeyboardView.setPressedNotes(pressedMidiNotes)
         practiceHintKeyboardView.setPressedNotes(pressedMidiNotes)
+        testKeyboardView.setPressedNotes(pressedMidiNotes)
         val pressedText = pressedMidiNotes
             .sorted()
             .joinToString(" ") { MidiNoteExtractor.noteName(it) }
@@ -1305,6 +1330,7 @@ class MainActivity : AppCompatActivity() {
         stopBpmHold()
         stopMetronome()
         metronomeTone.release()
+        testPianoSound.release()
         super.onDestroy()
     }
 

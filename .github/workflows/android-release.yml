@@ -4,19 +4,19 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: "Release tag, for example v0.0.1"
+        description: "Release tag, for example v0.1.2"
         required: true
-        default: "v0.0.1"
-      release_name:
-        description: "Release title"
-        required: false
-        default: ""
+        default: "v0.1.2"
   push:
     tags:
       - "v*"
 
 permissions:
   contents: write
+
+concurrency:
+  group: android-release-${{ github.event.inputs.tag_name || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   build-release-apk:
@@ -40,13 +40,33 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Build installable APK
-        run: ./gradlew --no-daemon :app:assembleDebug
+      - name: Restore release signing key
+        env:
+          SIGNING_KEY: ${{ secrets.ANDROID_SIGNING_KEY }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$SIGNING_KEY" || { echo "ANDROID_SIGNING_KEY is not configured"; exit 1; }
+          test -n "$KEYSTORE_PASSWORD" || { echo "ANDROID_KEYSTORE_PASSWORD is not configured"; exit 1; }
+          test -n "$KEY_ALIAS" || { echo "ANDROID_KEY_ALIAS is not configured"; exit 1; }
+          test -n "$KEY_PASSWORD" || { echo "ANDROID_KEY_PASSWORD is not configured"; exit 1; }
+          printf '%s' "$SIGNING_KEY" | base64 --decode > "$RUNNER_TEMP/liano-release.jks"
+
+      - name: Build signed release APK
+        env:
+          LIANO_KEYSTORE_PATH: ${{ runner.temp }}/liano-release.jks
+          LIANO_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          LIANO_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          LIANO_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon :app:assembleRelease
 
       - name: Prepare APK artifact
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag_name || github.ref_name }}
         run: |
           mkdir -p release
-          cp app/build/outputs/apk/debug/app-debug.apk release/liano-${{ github.event.inputs.tag_name || github.ref_name }}.apk
+          cp app/build/outputs/apk/release/app-release.apk "release/Liano-${RELEASE_TAG}.apk"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -54,12 +74,23 @@ jobs:
           name: liano-release-apk
           path: release/*.apk
 
+      - name: Remove APK assets from an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.inputs.tag_name || github.ref_name }}
+        run: |
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' 2>/dev/null \
+            | grep -Ei '\.apk$' \
+            | while read -r asset; do gh release delete-asset "$RELEASE_TAG" "$asset" --yes; done \
+            || true
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
-          name: ${{ github.event.inputs.release_name || github.event.inputs.tag_name || github.ref_name }}
+          name: Liano ${{ github.event.inputs.tag_name || github.ref_name }}
           files: release/*.apk
           draft: false
           prerelease: false
           generate_release_notes: true
+          overwrite_files: true
