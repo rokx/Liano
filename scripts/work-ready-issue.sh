@@ -119,7 +119,11 @@ trap cleanup EXIT
 
 git -C "$PROJECT_ROOT" fetch --quiet origin develop
 if git -C "$PROJECT_ROOT" show-ref --verify --quiet "refs/heads/$branch_name"; then
-    git -C "$PROJECT_ROOT" branch -D "$branch_name"
+    if ! git -C "$PROJECT_ROOT" merge-base --is-ancestor "$branch_name" origin/develop; then
+        echo "Local branch $branch_name contains work not merged into develop; refusing to delete it." >&2
+        exit 1
+    fi
+    git -C "$PROJECT_ROOT" branch -d "$branch_name"
 fi
 git -C "$PROJECT_ROOT" worktree add --quiet --detach "$worktree" origin/develop
 worktree_added=true
