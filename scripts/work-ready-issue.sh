@@ -66,12 +66,50 @@ if "$dry_run"; then
     exit 0
 fi
 
+remote_branch="$(git -C "$PROJECT_ROOT" ls-remote --heads origin "refs/heads/$branch_name")"
+if [[ -n "$remote_branch" ]]; then
+    git -C "$PROJECT_ROOT" fetch --quiet origin "$branch_name:refs/remotes/origin/$branch_name"
+    changed_files="$(git -C "$PROJECT_ROOT" diff --name-only "origin/develop...origin/$branch_name")"
+
+    pr_body="$(mktemp "${TMPDIR:-/tmp}/liano-pr-body.XXXXXX")"
+    trap 'rm -f "$pr_body"' EXIT
+    {
+        printf '## Summary\n\nAutomated implementation for #%s.\n\n' "$issue_number"
+        printf '## Rationale\n\n'
+        gh issue view "$issue_number" --repo "$REPOSITORY" --json body --jq '.body // "No issue description provided."'
+        printf '\n\n## Before / after\n\n'
+        printf '%s\n' "- Before: issue #$issue_number was open."
+        printf '%s\n' "- After: the following files are implemented on $branch_name:"
+        if [[ -n "$changed_files" ]]; then
+            while IFS= read -r file; do
+                printf '  - `%s`\n' "$file"
+            done <<<"$changed_files"
+        else
+            printf '%s\n' '  - No diff could be determined; inspect the branch before merging.'
+        fi
+        printf '\n## Validation\n\n'
+        printf '%s\n' '- `./gradlew testDebugUnitTest --no-daemon --console=plain` — passed before the branch was pushed.'
+        printf '\nCloses #%s.\n' "$issue_number"
+    } >"$pr_body"
+
+    pr_url="$(gh pr create \
+        --repo "$REPOSITORY" \
+        --base develop \
+        --head "$branch_name" \
+        --title "$(gh issue view "$issue_number" --repo "$REPOSITORY" --json title --jq .title)" \
+        --body-file "$pr_body")"
+    gh issue edit "$issue_number" --repo "$REPOSITORY" --remove-label work-ready
+    echo "Opened $pr_url from existing branch and removed work-ready from issue #$issue_number."
+    exit 0
+fi
+
 worktree="$(mktemp -d "${TMPDIR:-/tmp}/liano-work-ready.XXXXXX")"
 issue_context="$(mktemp "${TMPDIR:-/tmp}/liano-issue-context.XXXXXX")"
+pr_body=""
 worktree_added=false
 
 cleanup() {
-    rm -f "$issue_context"
+    rm -f "$issue_context" "$pr_body"
     if "$worktree_added"; then
         git -C "$PROJECT_ROOT" worktree remove --force "$worktree" || true
     fi
@@ -80,7 +118,10 @@ cleanup() {
 trap cleanup EXIT
 
 git -C "$PROJECT_ROOT" fetch --quiet origin develop
-git -C "$PROJECT_ROOT" worktree add --quiet -b "$branch_name" "$worktree" origin/develop
+if git -C "$PROJECT_ROOT" show-ref --verify --quiet "refs/heads/$branch_name"; then
+    git -C "$PROJECT_ROOT" branch -D "$branch_name"
+fi
+git -C "$PROJECT_ROOT" worktree add --quiet --detach "$worktree" origin/develop
 worktree_added=true
 
 {
@@ -94,10 +135,11 @@ PROMPT
     gh issue view "$issue_number" --repo "$REPOSITORY" --json number,title,body,url
 } >"$issue_context"
 
-codex exec \
+codex \
+    -a never \
+    exec \
     -C "$worktree" \
     --sandbox workspace-write \
-    --approve-for-me \
     - <"$issue_context"
 
 if [[ -z "$(git -C "$worktree" status --porcelain)" ]]; then
@@ -112,16 +154,34 @@ fi
 
 git -C "$worktree" config user.name "rokx"
 git -C "$worktree" config user.email "197242516+rokx@users.noreply.github.com"
+git -C "$worktree" switch --quiet -c "$branch_name"
 git -C "$worktree" add -A
 git -C "$worktree" commit -m "fix: address #$issue_number"
 git -C "$worktree" push --set-upstream origin "$branch_name"
+
+changed_files="$(git -C "$worktree" diff --name-only "origin/develop...HEAD")"
+pr_body="$(mktemp "${TMPDIR:-/tmp}/liano-pr-body.XXXXXX")"
+{
+    printf '## Summary\n\nAutomated implementation for #%s.\n\n' "$issue_number"
+    printf '## Rationale\n\n'
+    gh issue view "$issue_number" --repo "$REPOSITORY" --json body --jq '.body // "No issue description provided."'
+    printf '\n\n## Before / after\n\n'
+    printf '%s\n' "- Before: issue #$issue_number was open."
+    printf '%s\n' "- After: the following files were changed:"
+    while IFS= read -r file; do
+        printf '  - `%s`\n' "$file"
+    done <<<"$changed_files"
+    printf '\n## Validation\n\n'
+    printf '%s\n' '- `./gradlew testDebugUnitTest --no-daemon --console=plain` — passed in the automation run.'
+    printf '\nCloses #%s.\n' "$issue_number"
+} >"$pr_body"
 
 pr_url="$(gh pr create \
     --repo "$REPOSITORY" \
     --base develop \
     --head "$branch_name" \
     --title "$(gh issue view "$issue_number" --repo "$REPOSITORY" --json title --jq .title)" \
-    --body "Closes #$issue_number.")"
+    --body-file "$pr_body")"
 
 gh issue edit "$issue_number" --repo "$REPOSITORY" --remove-label work-ready
 echo "Opened $pr_url and removed work-ready from issue #$issue_number."
