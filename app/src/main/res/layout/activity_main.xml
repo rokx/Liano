@@ -95,12 +95,27 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="0.65" />
 
-            <ImageView
+            <LinearLayout
                 android:layout_width="52dp"
-                android:layout_height="52dp"
-                android:contentDescription="@string/app_logo"
-                android:scaleType="centerInside"
-                android:src="@drawable/ic_liano_launcher" />
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:layout_width="52dp"
+                    android:layout_height="52dp"
+                    android:contentDescription="@string/app_logo"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_liano_launcher" />
+
+                <TextView
+                    android:id="@+id/appVersionText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:textColor="#99FFFFFF"
+                    android:textSize="10sp" />
+            </LinearLayout>
         </LinearLayout>
 
         <LinearLayout

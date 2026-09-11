@@ -136,6 +136,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pianoTestButton: Button
     private lateinit var openMetronomeButton: Button
     private lateinit var openUserSettingsButton: Button
+    private lateinit var appVersionText: TextView
     private lateinit var activeUserText: TextView
     private lateinit var activeUserProgress: ProgressBar
     private lateinit var metronomeContainer: View
@@ -194,6 +195,7 @@ class MainActivity : AppCompatActivity() {
         pianoTestButton = findViewById(R.id.pianoTestButton)
         openMetronomeButton = findViewById(R.id.openMetronomeButton)
         openUserSettingsButton = findViewById(R.id.openUserSettingsButton)
+        appVersionText = findViewById(R.id.appVersionText)
         activeUserText = findViewById(R.id.activeUserText)
         activeUserProgress = findViewById(R.id.activeUserProgress)
         metronomeContainer = findViewById(R.id.metronomeContainer)
@@ -311,6 +313,7 @@ class MainActivity : AppCompatActivity() {
         updateSheetMetronomeSoundButton()
         updateInputModeButtons()
         updateSheetPlaybackModeButton()
+        appVersionText.text = currentVersionName()
         startSelectedInput()
         mainHandler.postDelayed(::checkForAppUpdate, UPDATE_CHECK_DELAY_MS)
     }
